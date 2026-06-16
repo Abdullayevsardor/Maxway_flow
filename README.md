@@ -35,7 +35,7 @@ So'ngra brauzerda oching: **http://127.0.0.1:8000**
 ## Demo login
 | Email | Parol |
 |-------|-------|
-| `asliddin@gmail.com` | `12345678` |
+| `a.ruzikulov@gmail.com` | `12345678` |
 
 ## Loyiha tuzilishi
 ```
