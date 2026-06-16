@@ -40,7 +40,7 @@ def seed():
         for nm, em, pos in [
             ("Sardor Aliyev", "sardor@maxway.uz", "Системный администратор"),
             ("Dilnoza Yusupova", "dilnoza@maxway.uz", "Специалист поддержки"),
-            ("Bek Toshev", "bek@maxway.uz", "Инженер")]:
+            ("Bek Toshev", "marsel@gmail.com", "Инженер")]:
             db.add(models.User(full_name=nm, email=em,
                 hashed_password=auth.hash_password("12345678"), role=Role.executor,
                 department_id=it.id, position=pos, specialization="ИТ",
