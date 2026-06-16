@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MAXWAY — Ro'yxatdan o'tish</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <div class="brand">
+          <span class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/>
+            </svg>
+          </span>
+          MAXWAY
+        </div>
+      </div>
+
+      <h1>Ҳисоб яратиш</h1>
+      <p class="auth-sub">MAXWAY тизимига рўйхатдан ўтинг</p>
+
+      {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+
+      <form method="post" action="/register">
+        <div class="field">
+          <label>Тўлиқ исм</label>
+          <input type="text" name="full_name" placeholder="Aslidin Karimov" required>
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" name="email" placeholder="email@gmail.com" required>
+        </div>
+        <div class="field">
+          <label>Бўлим</label>
+          <select name="department_id" class="inp" style="width:100%;padding:14px 16px;border-radius:12px;background:#f8fafc">
+            <option value="">— танланг —</option>
+            {% for d in departments %}
+              <option value="{{ d.id }}">{{ d.icon }} {{ d.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>Парол</label>
+          <input type="password" name="password" placeholder="••••••••" required minlength="4">
+        </div>
+        <button type="submit" class="btn-primary-grad">Рўйхатдан ўтиш</button>
+      </form>
+
+      <p class="auth-foot">Ҳисобингиз борми? <a href="/login">Кириш</a></p>
+    </div>
+  </div>
+</body>
+</html>

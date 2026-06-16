@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MAXWAY — Kirish</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#6366f1">
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <div class="brand">
+          <span class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/>
+            </svg>
+          </span>
+          MAXWAY
+        </div>
+      </div>
+
+      <h1>Хуш келибсиз</h1>
+      <p class="auth-sub">MAXWAY ҳисобингизга киринг</p>
+
+      {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+
+      <form method="post" action="/login">
+        <div class="field">
+          <label>Email</label>
+          <div class="field-input">
+            <input type="email" name="email" placeholder="email@gmail.com" required autofocus>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Парол</label>
+          <div class="field-input">
+            <input type="password" name="password" id="pw" placeholder="••••••••" required>
+            <button type="button" class="toggle-eye" onclick="togglePw()" aria-label="Parolni ko'rsatish">
+              <svg id="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary-grad">Кириш</button>
+      </form>
+
+      <p class="auth-foot">Ҳисоб йўқми? <a href="/register">Яратиш</a></p>
+    </div>
+  </div>
+
+  <script>
+    function togglePw(){
+      const i=document.getElementById('pw');
+      i.type = i.type==='password' ? 'text' : 'password';
+    }
+  </script>
+</body>
+</html>

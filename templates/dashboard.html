@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Добро пожаловать, {{ user.full_name.split(' ')[0] }}</h1><p>Обзор текущего состояния системы</p></div>
+  <div class="head-actions">
+    <a href="/dashboard" class="btn btn-light">⟳ Обновить</a>
+    <a href="/requests" class="btn btn-blue">＋ Создать заявку</a>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="label">Всего заявок</div><div class="val ic-blue">📄 {{ total }}</div></div>
+  <div class="stat"><div class="label">Новые</div><div class="val ic-orange">◉ {{ new }}</div></div>
+  <div class="stat"><div class="label">В работе</div><div class="val ic-cyan">◷ {{ in_progress }}</div></div>
+  <div class="stat"><div class="label">Выполнены</div><div class="val ic-green">✓ {{ done }}</div></div>
+</div>
+
+<div class="panel">
+  <div class="panel-head"><div class="title">🏷 Мои категории <span class="badge">{{ departments|length }}</span></div></div>
+  <div class="panel-body">
+    <div class="cat-grid">
+      {% for d in departments %}
+      <a href="/requests?department_id={{ d.id }}" class="cat-card">
+        <div class="cat-ico" style="color:{{ d.color }}">{{ d.icon }}</div>
+        <div><div class="cname">{{ d.name }}</div><div class="ccount">{{ d.requests|length }} заявок</div></div>
+      </a>
+      {% else %}<div class="empty">Категории не созданы</div>{% endfor %}
+    </div>
+  </div>
+</div>
+
+{% if unassigned > 0 %}
+<div class="alert-warn">⏱ {{ unassigned }} заявок ожидают назначения исполнителя
+  <a href="/requests" class="link">→ Назначить</a></div>
+{% endif %}
+
+<div class="panel">
+  <div class="panel-head"><div class="title">📄 Последние заявки <span class="badge">{{ recent|length }}</span></div>
+    <a href="/requests" class="link-blue">Все заявки →</a></div>
+  <table>
+    <thead><tr><th>#</th><th>Название</th><th>Статус</th><th>Приоритет</th><th>Создан</th></tr></thead>
+    <tbody>
+      {% for r in recent %}
+      <tr onclick="location.href='/requests/{{ r.id }}'" style="cursor:pointer">
+        <td data-label="#">{{ r.id }}</td>
+        <td data-label="Название"><strong style="color:var(--blue)">{{ r.title }}</strong></td>
+        <td data-label="Статус"><span class="tag {{ r.status.value }}">{{ STATUS_LABELS[r.status.value] }}</span></td>
+        <td data-label="Приоритет"><span class="tag {{ r.priority.value }}">{{ PRIORITY_LABELS[r.priority.value] }}</span></td>
+        <td data-label="Создан">{{ r.created_at.strftime('%d.%m.%Y') }}</td>
+      </tr>
+      {% else %}<tr><td colspan="5" class="empty">Заявок пока нет</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

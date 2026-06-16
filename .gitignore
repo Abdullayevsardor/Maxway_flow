@@ -1,0 +1,24 @@
+# Maxfiy — git'ga YUBORILMASIN
+telegram_token.txt
+maxway_url.txt
+.env
+
+# Baza va yuklamalar
+*.db
+*.db-wal
+*.db-shm
+# static/uploads/avatar_*
+static/uploads/requests/req_*
+static/uploads/requests/*
+!static/uploads/requests/.gitkeep
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Boshqa
+*.zip
+setup.py
+setup_1.py
+change_pw.py

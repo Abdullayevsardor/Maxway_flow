@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}{{ r.title }}{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <a href="/requests" class="btn btn-light">← Назад к заявкам</a>
+  <div class="head-actions">
+    {% if user.role.value != 'client' %}
+    <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca" onclick="openModal('reject')">⊘ Отклонить</button>
+    <button class="btn btn-blue" onclick="openModal('assign')">＋ Назначить исполнителя</button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="detail-grid">
+  <!-- Chap: asosiy + izohlar -->
+  <div>
+    <div class="panel">
+      <div class="panel-body">
+        <h2 style="font-size:22px;font-weight:800;margin-bottom:12px">{{ r.title }}</h2>
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+          <span class="tag {{ r.status.value }}">{{ STATUS_LABELS[r.status.value] }}</span>
+          <span class="tag {{ r.priority.value }}">{{ PRIORITY_LABELS[r.priority.value] }}</span>
+          {% if r.is_overdue %}<span class="tag overdue">⏱ Просрочена</span>{% endif %}
+        </div>
+        <p style="color:#475569;border-top:1px solid var(--border);padding-top:16px">{{ r.description or "Тавсиф йўқ" }}</p>
+        {% set req_atts = r.attachments|selectattr('stage','equalto','request')|list %}
+        {% set sol_atts = r.attachments|selectattr('stage','equalto','solution')|list %}
+        {% if req_atts %}
+        <div style="margin-top:16px">
+          <div style="font-size:13px;color:#94a3b8;margin-bottom:8px">📎 Вложения ({{ req_atts|length }})</div>
+          <div class="attach-grid">
+            {% for a in req_atts %}
+              {% if a.kind == 'video' %}
+              <video src="{{ a.file_path }}" controls class="attach"></video>
+              {% else %}
+              <a href="{{ a.file_path }}" target="_blank"><img src="{{ a.file_path }}" class="attach"></a>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% if sol_atts %}
+        <div style="margin-top:16px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:12px;padding:14px">
+          <div style="font-size:13px;color:#15803d;margin-bottom:8px;font-weight:600">✅ Решение — как исправлено ({{ sol_atts|length }})</div>
+          <div class="attach-grid">
+            {% for a in sol_atts %}
+              {% if a.kind == 'video' %}
+              <video src="{{ a.file_path }}" controls class="attach"></video>
+              {% else %}
+              <a href="{{ a.file_path }}" target="_blank"><img src="{{ a.file_path }}" class="attach"></a>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% if r.reject_reason %}
+        <div class="alert-warn" style="margin-top:16px;color:#b91c1c;background:#fef2f2;border-color:#fecaca">
+          ⊘ Отклонена: {{ r.reject_reason }}
+        </div>
+        {% endif %}
+        <div class="meta-grid">
+          <div><span>👤 Создал</span><b>{{ r.creator.full_name if r.creator else "—" }}</b></div>
+          <div><span>📅 Создана</span><b>{{ r.created_at.strftime('%d.%m.%Y %H:%M') }}</b></div>
+          <div><span>👤 Исполнитель</span><b>{{ r.assignee.full_name if r.assignee else "—" }}</b></div>
+          <div><span>⏰ Дедлайн</span><b style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y') if r.deadline else "—" }}</b></div>
+          <div><span>🏷 Категория</span><b>{{ r.department.icon }} {{ r.department.name }}</b></div>
+          <div><span>🔄 Обновлена</span><b>{{ r.updated_at.strftime('%d.%m.%Y %H:%M') }}</b></div>
+        </div>
+        <!-- status o'zgartirish -->
+        <form method="post" action="/requests/{{ r.id }}/status" style="margin-top:16px;display:flex;gap:8px;align-items:center">
+          <span style="font-size:13px;color:var(--muted)">Статус:</span>
+          <select name="status" onchange="this.form.submit()" class="inp">
+            {% for sv,sl in STATUS_LABELS.items() %}
+            <option value="{{ sv }}" {{ 'selected' if r.status.value==sv }}>{{ sl }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        {% if user.role.value != 'client' %}
+        <form method="post" action="/requests/{{ r.id }}/solution" enctype="multipart/form-data"
+              style="margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
+          <div style="font-weight:600;margin-bottom:10px">✅ Отправить решение (как исправлено)</div>
+          <textarea name="comment" class="inp" style="width:100%;min-height:60px;padding:10px"
+            placeholder="Опишите, как решена проблема..."></textarea>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+            <label class="btn btn-light" style="margin:0;cursor:pointer">📷 Фото
+              <input type="file" name="photos" accept="image/*" multiple hidden onchange="solCnt(this,'solP')"></label>
+            <label class="btn btn-light" style="margin:0;cursor:pointer">🎬 Видео
+              <input type="file" name="videos" accept="video/*" multiple hidden onchange="solCnt(this,'solV')"></label>
+            <span id="solP" class="upload-cnt"></span><span id="solV" class="upload-cnt"></span>
+          </div>
+          <div style="text-align:right;margin-top:12px">
+            <button type="submit" class="btn btn-blue">✅ Отправить решение</button>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="title">➤ Комментарии <span class="badge">{{ r.comments|length }}</span></div></div>
+      <div class="panel-body">
+        {% for c in r.comments %}
+        <div class="comment" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div>
+            <div><b>{{ c.user.full_name if c.user else "—" }}</b> <span style="color:#94a3b8;font-size:12px">{{ c.created_at.strftime('%d.%m.%Y %H:%M') }}</span></div>
+            <div style="color:#475569;margin-top:2px">{{ c.text }}</div>
+          </div>
+          {% if user.role.value in ['admin','manager'] or (c.user and c.user.id == user.id) %}
+          <form method="post" action="/comments/{{ c.id }}/delete"
+                onsubmit="return confirm('Изоҳ ўчирилсинми?')" style="flex-shrink:0">
+            <button type="submit" title="Удалить" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:15px;padding:4px">🗑</button>
+          </form>
+          {% endif %}
+        </div>
+        {% else %}
+        <p style="color:#94a3b8">Изоҳлар йўқ</p>
+        {% endfor %}
+        <form method="post" action="/requests/{{ r.id }}/comment" style="margin-top:16px">
+          <textarea name="text" class="inp" style="width:100%;min-height:70px;padding:12px" placeholder="Напишите комментарий..." required></textarea>
+          <div style="text-align:right;margin-top:10px">
+            <button type="submit" class="btn btn-blue">➤ Отправить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- O'ng: buyurtmachi + tarix -->
+  <div>
+    <div class="panel">
+      <div class="panel-head">
+        <div class="title" style="display:flex;align-items:center;gap:10px">
+          {% if r.creator and r.creator.avatar %}
+          <img src="{{ r.creator.avatar }}" class="cust-ava" alt="">
+          {% else %}
+          <span class="cust-ava cust-ava-def">
+            <svg viewBox="0 0 24 24" fill="#fff" width="20" height="20"><path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z"/></svg>
+          </span>
+          {% endif %}
+          Заказчик
+        </div>
+      </div>
+      <div class="panel-body" style="font-size:14px;line-height:2">
+        <div><span style="color:#94a3b8">Имя:</span> <b>{{ r.customer_name or "—" }}</b></div>
+        <div><span style="color:#94a3b8">Email:</span> {{ r.customer_email or "—" }}</div>
+        <div><span style="color:#94a3b8">Телефон:</span> {{ r.customer_phone or "—" }}</div>
+        {% if r.branch_obj %}
+        <div style="display:flex;gap:8px;align-items:flex-start;margin-top:6px;line-height:1.5">
+          <span style="color:#94a3b8;white-space:nowrap">Филиал:</span>
+          <span><b>{{ r.branch_obj.name }}</b><br>
+            <span style="color:#475569">📍 {{ r.branch_obj.location }}</span></span>
+        </div>
+        {% else %}
+        <div><span style="color:#94a3b8">Филиал:</span> {{ r.branch or "—" }}</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="title">История статусов</div></div>
+      <div class="panel-body">
+        <div class="timeline">
+          {% for h in r.history %}
+          <div class="tl-item">
+            <span class="tl-dot {{ h.status.value }}"></span>
+            <div><b>{{ STATUS_LABELS[h.status.value] }}</b><div style="color:#94a3b8;font-size:12px">{{ h.created_at.strftime('%d.%m.%Y %H:%M') }}</div></div>
+          </div>
+          {% else %}<p style="color:#94a3b8">Тарих йўқ</p>{% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Назначить modal -->
+<div class="modal-bg" id="modal-assign">
+  <div class="modal">
+    <h3>Назначить исполнителя</h3>
+    <form method="post" action="/requests/{{ r.id }}/assign">
+      <div class="field">
+        <select name="assigned_to" required>
+          <option value="">Выберите исполнителя</option>
+          {% for e in executors %}<option value="{{ e.id }}">{{ e.full_name }} ({{ e.email }})</option>{% endfor %}
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="closeModal('assign')">Отмена</button>
+        <button type="submit" class="btn btn-blue">Назначить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Отклонить modal -->
+<div class="modal-bg" id="modal-reject">
+  <div class="modal">
+    <h3>Причина отклонения</h3>
+    <form method="post" action="/requests/{{ r.id }}/reject">
+      <div class="field">
+        <textarea name="reason" placeholder="Укажите причину отклонения заявки" required></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="closeModal('reject')">Отмена</button>
+        <button type="submit" class="btn" style="background:#dc2626;color:#fff">Отклонить</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function openModal(n){document.getElementById('modal-'+n).classList.add('open')}
+  function closeModal(n){document.getElementById('modal-'+n).classList.remove('open')}
+  function solCnt(inp,id){const n=inp.files.length;document.getElementById(id).textContent=n?('✓ '+n):'';}
+  document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
+</script>
+{% endblock %}

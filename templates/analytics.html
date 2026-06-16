@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Аналитика{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Аналитика</h1><p>Статистика и ключевые показатели</p></div></div>
+
+<div class="stats">
+  <div class="stat"><div class="label">Всего заявок</div><div class="val ic-blue">📄 {{ total }}</div></div>
+  <div class="stat"><div class="label">SLA соблюдение</div><div class="val" style="color:{{ '#16a34a' if sla>=70 else '#dc2626' }}">✓ {{ sla }}%</div></div>
+  <div class="stat"><div class="label">Нарушений SLA</div><div class="val ic-orange">⏱ {{ overdue }}</div></div>
+  <div class="stat"><div class="label">Открытых сейчас</div><div class="val ic-cyan">◉ {{ status_stats.new + status_stats.approved + status_stats.in_progress }}</div></div>
+</div>
+
+<!-- Status taqsimoti -->
+<div class="panel">
+  <div class="panel-head"><div class="title">Распределение по статусам</div></div>
+  <div class="panel-body">
+    <div class="donuts">
+      {% set sd = [('new','Новые','#f59e0b'),('approved','Одобрены','#f59e0b'),('in_progress','В работе','#0891b2'),('done','Выполнены','#16a34a'),('rejected','Отклонены','#dc2626')] %}
+      {% for key,label,color in sd %}
+      {% set val = status_stats[key] %}
+      {% set pct = (val / total * 100) if total else 0 %}
+      <div class="donut-item">
+        <div class="donut" style="background:conic-gradient({{ color }} {{ pct }}%, #f1f5f9 0)">
+          <span>{{ val }}</span>
+        </div>
+        <div class="donut-label">{{ label }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- Bo'limlar bo'yicha -->
+<div class="panel">
+  <div class="panel-head"><div class="title">📊 Заявки по отделам</div></div>
+  <div class="panel-body">
+    {% for name, color, cnt in dep_stats %}
+    <div class="bar-row">
+      <div class="bname">{{ name }}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:{{ (cnt/max_count*100) }}%;background:{{ color }}"></div></div>
+      <div class="bval">{{ cnt }}</div>
+    </div>
+    {% else %}<div class="empty">Маълумот йўқ</div>{% endfor %}
+  </div>
+</div>
+
+<!-- Ijrochilar samaradorligi -->
+<div class="panel">
+  <div class="panel-head"><div class="title">✓ Эффективность исполнителей</div></div>
+  <table>
+    <thead><tr><th>Исполнитель</th><th>Всего</th><th>Закрыто</th><th>Выполнение</th></tr></thead>
+    <tbody>
+      {% for e in exec_stats %}
+      <tr>
+        <td data-label="Исполнитель"><b>{{ e.name }}</b><div style="color:#94a3b8;font-size:12px">{{ e.email }}</div></td>
+        <td data-label="Всего">{{ e.total }}</td>
+        <td data-label="Закрыто"><span class="tag done">{{ e.done }}</span></td>
+        <td data-label="Выполнение">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="bar-track" style="width:120px"><div class="bar-fill" style="width:{{ e.pct }}%;background:#2563eb"></div></div>
+            <b>{{ e.pct }}%</b>
+          </div>
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="4" class="empty">Маълумот йўқ</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

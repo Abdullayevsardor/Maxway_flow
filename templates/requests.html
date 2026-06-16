@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Заявки{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>{% if selected_dep %}{{ selected_dep.icon }} {{ selected_dep.name }}{% else %}Заявки{% endif %}</h1>
+    <p>Всего: {{ counts.all }}</p>
+  </div>
+  <div class="head-actions">
+    <button class="btn btn-blue" onclick="openModal()">＋ Создать</button>
+  </div>
+</div>
+
+<!-- Status tablar -->
+<div class="chips">
+  <a href="/requests" class="chip {{ 'active' if not selected_status and not selected_dep }}">Все <span class="cbadge">{{ counts.all }}</span></a>
+  <a href="/requests?status=new" class="chip {{ 'active' if selected_status=='new' }}">Новые <span class="cbadge">{{ counts.new }}</span></a>
+  <a href="/requests?status=approved" class="chip {{ 'active' if selected_status=='approved' }}">Одобрены <span class="cbadge">{{ counts.approved }}</span></a>
+  <a href="/requests?status=in_progress" class="chip {{ 'active' if selected_status=='in_progress' }}">В работе <span class="cbadge">{{ counts.in_progress }}</span></a>
+  <a href="/requests?status=on_check" class="chip {{ 'active' if selected_status=='on_check' }}">На проверке <span class="cbadge">{{ counts.on_check }}</span></a>
+  <a href="/requests?status=done" class="chip {{ 'active' if selected_status=='done' }}">Выполнены <span class="cbadge">{{ counts.done }}</span></a>
+  <a href="/requests?status=rejected" class="chip {{ 'active' if selected_status=='rejected' }}">Отклонены <span class="cbadge">{{ counts.rejected }}</span></a>
+  <a href="/requests?status=overdue" class="chip {{ 'active' if selected_status=='overdue' }}" style="border-color:#fecaca;color:#dc2626">⏱ Просроченные <span class="cbadge" style="background:#fef2f2;color:#dc2626">{{ counts.overdue }}</span></a>
+</div>
+
+<!-- Qidiruv -->
+<div class="panel" style="padding:14px 18px;margin-bottom:18px">
+  <form method="get" action="/requests" style="display:flex;gap:10px;flex-wrap:wrap">
+    {% if selected_dep %}<input type="hidden" name="department_id" value="{{ selected_dep.id }}">{% endif %}
+    <input type="text" name="q" value="{{ search }}" placeholder="🔍 Поиск по названию..." class="inp" style="flex:1;min-width:200px;padding:10px 14px">
+    <button type="submit" class="btn btn-light">Найти</button>
+  </form>
+</div>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>#</th><th>Название</th><th>Статус</th><th>Приоритет</th><th>Категория</th><th>Заказчик</th><th>Исполнитель</th><th>Дедлайн</th></tr>
+    </thead>
+    <tbody>
+      {% for r in items %}
+      <tr onclick="location.href='/requests/{{ r.id }}'" style="cursor:pointer">
+        <td data-label="#">{{ r.id }}</td>
+        <td data-label="Название">
+          <strong style="color:var(--blue)">{{ r.title }}</strong>
+          {% if r.is_overdue %}<div><span class="tag overdue" style="font-size:11px">⏱ Просрочена</span></div>{% endif %}
+        </td>
+        <td data-label="Статус"><span class="tag {{ r.status.value }}">{{ STATUS_LABELS[r.status.value] }}</span></td>
+        <td data-label="Приоритет"><span class="tag {{ r.priority.value }}">{{ PRIORITY_LABELS[r.priority.value] }}</span></td>
+        <td data-label="Категория">{{ r.department.icon }} {{ r.department.name }}</td>
+        <td data-label="Заказчик">{{ r.customer_name or "—" }}</td>
+        <td data-label="Исполнитель">{{ r.assignee.full_name if r.assignee else "—" }}</td>
+        <td data-label="Дедлайн" style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y') if r.deadline else "—" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="empty">Заявка топилмади</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Modal -->
+<div class="modal-bg" id="modal">
+  <div class="modal" style="max-width:600px">
+    <h3>Новая заявка</h3>
+    <form method="post" action="/requests/create" enctype="multipart/form-data">
+      <div class="field"><label>Название</label><input type="text" name="title" required></div>
+      <div class="field"><label>Описание</label><textarea name="description"></textarea></div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Категория</label>
+          <select name="department_id" required>
+            {% for d in departments %}<option value="{{ d.id }}" {{ 'selected' if selected_dep and selected_dep.id==d.id }}>{{ d.icon }} {{ d.name }}</option>{% endfor %}
+          </select></div>
+        <div class="field" style="flex:1"><label>Приоритет</label>
+          <select name="priority"><option value="low">Низкий</option><option value="medium" selected>Средний</option><option value="high">Высокий</option></select></div>
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Имя заказчика *</label><input type="text" name="customer_name" required></div>
+        <div class="field" style="flex:1"><label>Телефон *</label><input type="text" name="customer_phone" value="+998 " required></div>
+      </div>
+      {% if user.role.value != 'client' %}
+      <div class="field"><label>Филиал (локация) *</label>
+        <select name="branch_id" required>
+          <option value="">— выберите филиал —</option>
+          {% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+        </select></div>
+      {% endif %}
+      <div class="field"><label>Дедлайн</label><input type="date" name="deadline"></div>
+
+      <div class="upload-box">
+        <div class="upload-ico">📷</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:14px">Фото</div>
+          <div style="font-size:12px;color:#94a3b8">JPG, PNG — можно несколько</div>
+        </div>
+        <label class="btn btn-light" style="margin:0;cursor:pointer">Выбрать
+          <input type="file" name="photos" accept="image/*" multiple hidden onchange="showCnt(this,'photoCnt')"></label>
+      </div>
+      <div id="photoCnt" class="upload-cnt"></div>
+
+      <div class="upload-box">
+        <div class="upload-ico">🎬</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:14px">Видео</div>
+          <div style="font-size:12px;color:#94a3b8">MP4, MOV — можно несколько</div>
+        </div>
+        <label class="btn btn-light" style="margin:0;cursor:pointer">Выбрать
+          <input type="file" name="videos" accept="video/*" multiple hidden onchange="showCnt(this,'videoCnt')"></label>
+      </div>
+      <div id="videoCnt" class="upload-cnt"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="closeModal()">Отмена</button>
+        <button type="submit" class="btn btn-blue">Создать</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function openModal(){document.getElementById('modal').classList.add('open')}
+  function closeModal(){document.getElementById('modal').classList.remove('open')}
+  document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
+  function showCnt(inp,id){
+    const n=inp.files.length;
+    document.getElementById(id).textContent = n ? ('✓ Выбрано: '+n) : '';
+  }
+</script>
+{% endblock %}

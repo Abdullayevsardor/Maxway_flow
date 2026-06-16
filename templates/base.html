@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MAXWAY — {% block title %}Панель{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#0f172a">
+</head>
+<body>
+<div class="layout" id="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg>
+      </span>MAXWAY
+    </div>
+    <nav class="nav">
+      <a href="/dashboard" class="{{ 'active' if active=='dashboard' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Дашборд</a>
+      <a href="/requests" class="{{ 'active' if active=='requests' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></svg>Заявки</a>
+      {% if user.role.value in ['admin','manager','executor'] %}
+      <a href="/executors" class="{{ 'active' if active=='executors' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>Исполнители</a>
+      <a href="/analytics" class="{{ 'active' if active=='analytics' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>Аналитика</a>
+      {% endif %}
+    </nav>
+    <div class="sidebar-foot">
+      <div class="role">{{ ROLE_LABELS.get(user.role.value, 'ИСПОЛНИТЕЛЬ') }}</div>
+      <div class="uname">{{ user.full_name }}</div>
+      {% if user.role.value == 'client' and user.branch %}
+        <div class="udep">🏢 {{ user.branch.name }}</div>
+      {% elif user.department %}
+        <div class="udep">{{ user.department.icon }} {{ user.department.name }}</div>
+      {% endif %}
+    </div>
+  </aside>
+  <div class="backdrop" id="backdrop" onclick="toggleMenu()"></div>
+
+  <div class="main">
+    <div class="topbar">
+      <button class="ico-btn" onclick="toggleMenu()" title="Свернуть/развернуть меню">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="21" height="21"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg>
+      </button>
+      <div></div>
+      <div class="topbar-right">
+        <button class="ico-btn notif-btn" onclick="toggleNotif()" style="position:relative">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="notif-badge" id="notifBadge" style="display:none">0</span>
+        </button>
+        <div class="user-menu">
+          <button class="user-pill" onclick="toggleUser()">
+            <span class="avatar">{% if user.avatar %}<img src="{{ user.avatar }}" alt="">{% else %}{{ user.full_name[0]|upper }}{% endif %}</span>{{ user.full_name.split(' ')[0] }}
+          </button>
+          <div class="dropdown" id="userDrop">
+            <a href="/profile">⚙ Профиль</a>
+            {% if user.role.value == 'admin' %}<a href="/admin">🛡 Админ панель</a>{% endif %}
+            <a href="/logout" class="danger">↩ Выйти</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="notif-panel" id="notifPanel">
+      <div class="notif-head">🔔 Уведомления <button class="ico-btn" onclick="toggleNotif()">✕</button></div>
+      <div id="notifList">
+        <div class="notif-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" width="48" height="48"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+          <p>Загрузка...</p>
+        </div>
+      </div>
+    </div>
+    <div class="backdrop" id="notifBack" onclick="toggleNotif()"></div>
+
+    <div class="content">{% block content %}{% endblock %}</div>
+  </div>
+</div>
+<script>
+  function toggleMenu(){
+    if(window.innerWidth>760){
+      document.getElementById('layout').classList.toggle('collapsed');
+    } else {
+      document.getElementById('sidebar').classList.toggle('open');
+      document.getElementById('backdrop').classList.toggle('open');
+    }
+  }
+  function toggleUser(){document.getElementById('userDrop').classList.toggle('open')}
+  async function toggleNotif(){
+    const p=document.getElementById('notifPanel');
+    const opening=!p.classList.contains('open');
+    p.classList.toggle('open');document.getElementById('notifBack').classList.toggle('open');
+    if(opening){ await loadNotifs(); markNotifsRead(); }
+  }
+  async function loadNotifs(){
+    try{
+      const r=await fetch('/api/notifications');const d=await r.json();
+      const b=document.getElementById('notifBadge');
+      if(d.unread>0){b.textContent=d.unread>9?'9+':d.unread;b.style.display='grid';}
+      else b.style.display='none';
+      const list=document.getElementById('notifList');
+      if(!d.items.length){
+        list.innerHTML='<div class="notif-empty"><p style="color:#94a3b8">Нет уведомлений</p></div>';
+      }else{
+        list.innerHTML=d.items.map(n=>
+          `<a href="${n.link}" class="notif-item${n.is_read?'':' unread'}">
+             <div>${n.text}</div><div class="notif-time">${n.time}</div></a>`).join('');
+      }
+    }catch(e){}
+  }
+  async function markNotifsRead(){
+    try{ await fetch('/api/notifications/read',{method:'POST'});
+      document.getElementById('notifBadge').style.display='none';
+      document.querySelectorAll('.notif-item.unread').forEach(el=>el.classList.remove('unread'));
+    }catch(e){}
+  }
+  loadNotifs(); setInterval(loadNotifs, 30000);
+  document.addEventListener('click',e=>{
+    const um=document.querySelector('.user-menu');
+    if(um && !um.contains(e.target)) document.getElementById('userDrop').classList.remove('open');
+  });
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

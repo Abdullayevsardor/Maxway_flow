@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Бўлимлар{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Бўлимлар (категориялар)</h1>
+    <p>Бўлим қўшиш ёки ўчириш · {{ departments|length }} / 10 та</p>
+  </div>
+</div>
+
+{% if error == 'limit' %}
+<div class="alert-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  Максимум 10 та бўлим яратиш мумкин. Янгисини қўшиш учун аввал биттасини ўчиринг.
+</div>
+{% endif %}
+
+<!-- Yangi bo'lim qo'shish -->
+{% if departments|length < 10 %}
+<div class="panel">
+  <div class="panel-head">
+    <div class="title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Янги бўлим қўшиш
+    </div>
+  </div>
+  <div class="panel-body">
+    <form method="post" action="/departments/create"
+          style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:2;min-width:180px">
+        <label style="font-size:13px;font-weight:600;color:#334155;display:block;margin-bottom:6px">Номи</label>
+        <input type="text" name="name" required placeholder="Масалан: Дизайн"
+               class="inp" style="width:100%;padding:11px 13px">
+      </div>
+      <div style="width:90px">
+        <label style="font-size:13px;font-weight:600;color:#334155;display:block;margin-bottom:6px">Белги</label>
+        <input type="text" name="icon" value="🗂️" maxlength="4"
+               class="inp" style="width:100%;padding:11px 13px;text-align:center;font-size:18px">
+      </div>
+      <div style="width:90px">
+        <label style="font-size:13px;font-weight:600;color:#334155;display:block;margin-bottom:6px">Ранг</label>
+        <input type="color" name="color" value="#2563eb"
+               style="width:100%;height:44px;border:1px solid var(--border);border-radius:9px;background:#fff;cursor:pointer">
+      </div>
+      <button type="submit" class="btn btn-blue" style="height:44px">Қўшиш</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<!-- Mavjud bo'limlar -->
+<div class="panel">
+  <div class="panel-head">
+    <div class="title">Мавжуд бўлимлар</div>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Белги</th><th>Номи</th><th>Заявкалар</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for d in departments %}
+      <tr>
+        <td data-label="Белги">
+          <span class="cat-ico" style="display:inline-grid;width:36px;height:36px;color:{{ d.color }}">{{ d.icon }}</span>
+        </td>
+        <td data-label="Номи"><strong>{{ d.name }}</strong></td>
+        <td data-label="Заявкалар">{{ d.requests|length }} та</td>
+        <td data-label="" style="text-align:right">
+          <form method="post" action="/departments/{{ d.id }}/delete" style="display:inline"
+                onsubmit="return confirm('«{{ d.name }}» бўлими ва унга тегишли барча заявкалар ўчирилади. Давом этасизми?')">
+            <button type="submit" class="btn btn-light" style="color:#dc2626;border-color:#fecaca">
+              Ўчириш
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="empty">Бўлимлар йўқ</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

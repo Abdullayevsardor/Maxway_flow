@@ -1,0 +1,601 @@
+/* ===== MAXWAY — global ===== */
+:root{
+  --navy:#0f172a;
+  --navy-2:#1e293b;
+  --navy-hover:#1d4ed8;
+  --blue:#2563eb;
+  --blue-light:#eff6ff;
+  --indigo:#6366f1;
+  --indigo-2:#818cf8;
+  --bg:#f1f5f9;
+  --card:#ffffff;
+  --text:#0f172a;
+  --muted:#64748b;
+  --border:#e2e8f0;
+  --yellow-bg:#fefce8;
+  --yellow-border:#fde68a;
+  --yellow-text:#b45309;
+  --green:#16a34a;
+  --orange:#f59e0b;
+  --cyan:#0891b2;
+  --radius:14px;
+  --shadow:0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:"Inter",-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+}
+a{text-decoration:none;color:inherit}
+button{font-family:inherit;cursor:pointer;border:none}
+
+/* ===== Logo ===== */
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px}
+.brand-mark{
+  width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+  background:linear-gradient(135deg,#22d3ee,#2563eb);color:#fff;
+  box-shadow:0 4px 12px rgba(37,99,235,.35);
+}
+.brand-mark svg{width:18px;height:18px}
+
+/* ============================================================
+   LOGIN  (2-rasm: binafsha/indigo)
+   ============================================================ */
+.auth-wrap{
+  min-height:100vh;display:grid;place-items:center;padding:24px;
+  background:linear-gradient(160deg,#eef2ff 0%,#f5f3ff 50%,#eef2ff 100%);
+}
+.auth-card{
+  width:100%;max-width:430px;background:#fff;border-radius:22px;
+  padding:44px 40px;box-shadow:0 20px 50px rgba(79,70,229,.12);
+}
+.auth-logo{display:flex;justify-content:center;margin-bottom:22px}
+.auth-card h1{text-align:center;font-size:30px;font-weight:800;letter-spacing:-.5px}
+.auth-sub{text-align:center;color:var(--muted);margin:8px 0 30px;font-size:15px}
+.field{margin-bottom:20px}
+.field label{display:block;font-size:14px;font-weight:600;margin-bottom:8px;color:#334155}
+.field-input{position:relative}
+.field input{
+  width:100%;padding:14px 16px;border-radius:12px;font-size:15px;
+  border:1px solid var(--border);background:#f8fafc;transition:.15s;
+}
+.field input:focus{outline:none;border-color:var(--indigo);background:#fff;
+  box-shadow:0 0 0 4px rgba(99,102,241,.12)}
+.toggle-eye{
+  position:absolute;right:12px;top:50%;transform:translateY(-50%);
+  background:none;color:var(--muted);display:grid;place-items:center;
+}
+.btn-primary-grad{
+  width:100%;padding:15px;border-radius:12px;color:#fff;font-size:16px;font-weight:700;
+  background:linear-gradient(135deg,var(--indigo),var(--indigo-2));
+  transition:.15s;box-shadow:0 8px 20px rgba(99,102,241,.3);
+}
+.btn-primary-grad:hover{filter:brightness(1.05);transform:translateY(-1px)}
+.auth-foot{text-align:center;margin-top:22px;color:var(--muted);font-size:14px}
+.auth-foot a{color:var(--blue);font-weight:600}
+.auth-error{
+  background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;
+  padding:12px 14px;border-radius:10px;font-size:14px;margin-bottom:18px;text-align:center;
+}
+
+/* ============================================================
+   ADMIN LAYOUT (1-rasm)
+   ============================================================ */
+.layout{display:flex;min-height:100vh}
+
+/* --- Sidebar --- */
+.sidebar{
+  width:248px;background:var(--navy);color:#cbd5e1;
+  display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;
+}
+.sidebar .brand{color:#fff;padding:22px 22px;font-size:21px}
+.nav{padding:8px 14px;flex:1}
+.nav a{
+  display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:10px;
+  font-size:15px;font-weight:500;color:#94a3b8;margin-bottom:4px;transition:.15s;
+}
+.nav a svg{width:18px;height:18px;flex-shrink:0}
+.nav a:hover{background:#1e293b;color:#e2e8f0}
+.nav a.active{background:var(--blue);color:#fff;box-shadow:0 4px 12px rgba(37,99,235,.4)}
+.sidebar-foot{padding:18px 22px;border-top:1px solid #1e293b}
+.sidebar-foot .role{font-size:11px;letter-spacing:.5px;color:#64748b;font-weight:700}
+.sidebar-foot .uname{font-weight:700;color:#f1f5f9;margin-top:2px}
+.sidebar-foot .udep{font-size:12px;color:#64748b;margin-top:2px;display:flex;gap:6px;align-items:center}
+
+/* --- Main --- */
+.main{flex:1;margin-left:248px;display:flex;flex-direction:column}
+.topbar{
+  height:66px;background:#fff;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;padding:0 28px;
+  position:sticky;top:0;z-index:20;
+}
+.topbar .ico-btn{width:40px;height:40px;border-radius:10px;background:none;
+  display:grid;place-items:center;color:var(--muted)}
+.topbar .ico-btn:hover{background:#f1f5f9}
+.topbar-right{display:flex;align-items:center;gap:14px}
+.avatar{
+  width:36px;height:36px;border-radius:50%;background:var(--blue);color:#fff;
+  display:grid;place-items:center;font-weight:700;font-size:14px;
+}
+.user-pill{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px}
+
+.content{padding:28px;max-width:1180px;width:100%}
+.page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:26px;gap:16px;flex-wrap:wrap}
+.page-head h1{font-size:28px;font-weight:800;letter-spacing:-.5px}
+.page-head p{color:var(--muted);margin-top:4px;font-size:15px}
+.head-actions{display:flex;gap:12px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:10px;
+  font-weight:600;font-size:14px;transition:.15s}
+.btn svg{width:16px;height:16px}
+.btn-light{background:#fff;border:1px solid var(--border);color:#334155}
+.btn-light:hover{background:#f8fafc}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-blue:hover{background:var(--navy-hover)}
+
+/* --- Stat cards --- */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:24px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:22px;box-shadow:var(--shadow)}
+.stat .label{color:var(--muted);font-size:14px;margin-bottom:14px}
+.stat .val{display:flex;align-items:center;gap:10px;font-size:28px;font-weight:800}
+.stat .val svg{width:22px;height:22px}
+.ic-blue{color:var(--blue)} .ic-orange{color:var(--orange)}
+.ic-cyan{color:var(--cyan)} .ic-green{color:var(--green)}
+
+/* --- Panel / card --- */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow);margin-bottom:24px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;
+  padding:20px 24px;border-bottom:1px solid var(--border)}
+.panel-head .title{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.panel-head .title svg{width:18px;height:18px;color:var(--blue)}
+.badge{background:var(--blue-light);color:var(--blue);font-size:13px;font-weight:700;
+  padding:2px 9px;border-radius:20px}
+.panel-body{padding:24px}
+.link-blue{color:var(--blue);font-weight:600;font-size:14px;display:inline-flex;align-items:center;gap:6px}
+
+/* --- Categories --- */
+.cat-grid{display:flex;flex-wrap:wrap;gap:14px}
+.cat-card{
+  display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:12px;
+  background:#f5f7ff;border:1px solid #e0e7ff;min-width:150px;transition:.15s;cursor:pointer;
+}
+.cat-card:hover{background:#eef2ff;transform:translateY(-2px);box-shadow:0 6px 16px rgba(99,102,241,.15)}
+.cat-ico{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;
+  background:#fff;font-size:20px;box-shadow:var(--shadow)}
+.cat-card .cname{font-weight:700;font-size:15px}
+.cat-card .ccount{font-size:12px;color:var(--muted)}
+
+/* --- Alert --- */
+.alert-warn{
+  display:flex;align-items:center;gap:12px;background:var(--yellow-bg);
+  border:1px solid var(--yellow-border);border-radius:var(--radius);
+  padding:18px 22px;margin-bottom:24px;color:var(--yellow-text);font-weight:600;
+}
+.alert-warn svg{width:18px;height:18px;flex-shrink:0}
+.alert-warn .link{margin-left:auto;display:inline-flex;align-items:center;gap:6px;
+  color:#b45309;font-weight:700}
+
+/* --- Table --- */
+table{width:100%;border-collapse:collapse}
+thead th{text-align:left;font-size:13px;font-weight:700;color:var(--muted);
+  padding:14px 16px;border-bottom:1px solid var(--border)}
+tbody td{padding:14px 16px;border-bottom:1px solid #f1f5f9;font-size:14px}
+tbody tr:hover{background:#f8fafc}
+tbody tr:last-child td{border-bottom:none}
+.tag{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;
+  font-size:12px;font-weight:700}
+.tag.new{background:#fff7ed;color:#c2410c}
+.tag.in_progress{background:#ecfeff;color:#0e7490}
+.tag.done{background:#f0fdf4;color:#15803d}
+.tag.high{background:#fef2f2;color:#dc2626}
+.tag.medium{background:#fffbeb;color:#d97706}
+.tag.low{background:#f1f5f9;color:#475569}
+.empty{text-align:center;color:var(--muted);padding:40px;font-size:15px}
+
+/* --- Forms / select --- */
+select,.inp{padding:8px 12px;border:1px solid var(--border);border-radius:9px;
+  font-size:13px;font-family:inherit;background:#fff}
+select:focus,.inp:focus{outline:none;border-color:var(--blue)}
+
+/* --- Modal --- */
+.modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;
+  place-items:center;z-index:50;padding:20px}
+.modal-bg.open{display:grid}
+.modal{background:#fff;border-radius:18px;width:100%;max-width:520px;padding:28px;
+  box-shadow:0 30px 60px rgba(0,0,0,.25)}
+.modal h3{font-size:20px;font-weight:800;margin-bottom:20px}
+.modal .field{margin-bottom:16px}
+.modal label{font-size:13px;font-weight:600;color:#334155;display:block;margin-bottom:6px}
+.modal input,.modal textarea,.modal select{
+  width:100%;padding:11px 13px;border:1px solid var(--border);border-radius:10px;
+  font-size:14px;font-family:inherit;background:#f8fafc}
+.modal textarea{resize:vertical;min-height:80px}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}
+
+/* --- Chips (filter) --- */
+.chips{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+.chip{padding:8px 16px;border-radius:30px;background:#fff;border:1px solid var(--border);
+  font-size:13px;font-weight:600;color:#475569}
+.chip.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+
+/* --- Bars (analytics) --- */
+.bar-row{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.bar-row .bname{width:160px;font-size:14px;font-weight:600}
+.bar-track{flex:1;height:12px;background:#f1f5f9;border-radius:8px;overflow:hidden}
+.bar-fill{height:100%;border-radius:8px}
+.bar-row .bval{width:36px;text-align:right;font-weight:700;font-size:14px}
+
+/* --- People grid --- */
+.people{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.person{background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+  padding:18px;box-shadow:var(--shadow);display:flex;gap:14px;align-items:center}
+.person .pav{width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#6366f1);
+  color:#fff;display:grid;place-items:center;font-weight:700}
+.person .pname{font-weight:700}
+.person .pmeta{font-size:13px;color:var(--muted);margin-top:2px}
+.load-pill{margin-left:auto;background:var(--blue-light);color:var(--blue);
+  font-weight:700;font-size:13px;padding:4px 10px;border-radius:20px}
+
+/* ===== Responsive (mobil / app) ===== */
+.hamb{display:none}
+@media(max-width:980px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:760px){
+  .sidebar{transform:translateX(-100%);transition:.25s;z-index:60;width:230px}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0}
+  .hamb{display:grid}
+  .content{padding:18px}
+  .stats{grid-template-columns:repeat(2,1fr);gap:12px}
+  .page-head h1{font-size:22px}
+  thead{display:none}
+  table,tbody,tr,td{display:block;width:100%}
+  tbody tr{border:1px solid var(--border);border-radius:12px;margin-bottom:12px;padding:6px}
+  tbody td{border:none;padding:8px 12px}
+  tbody td::before{content:attr(data-label);font-weight:700;color:var(--muted);
+    display:block;font-size:12px;margin-bottom:2px}
+}
+.backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:55}
+.backdrop.open{display:block}
+
+/* ===== Boyitilgan komponentlar ===== */
+/* Status tag'lar (yangi) */
+.tag.approved{background:#fff7ed;color:#c2410c}
+.tag.on_check{background:#f5f3ff;color:#7c3aed}
+.tag.rejected{background:#fef2f2;color:#dc2626}
+.tag.overdue{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+
+/* Chip badge (sanoq) */
+.cbadge{display:inline-block;min-width:18px;padding:0 6px;border-radius:20px;background:#e2e8f0;
+  color:#475569;font-size:11px;font-weight:700;text-align:center;margin-left:4px}
+.chip.active .cbadge{background:rgba(255,255,255,.25);color:#fff}
+
+/* User dropdown */
+.user-menu{position:relative}
+.user-pill{background:none;border:none}
+.dropdown{position:absolute;right:0;top:46px;background:#fff;border:1px solid var(--border);
+  border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);min-width:170px;padding:6px;display:none;z-index:40}
+.dropdown.open{display:block}
+.dropdown a{display:block;padding:10px 14px;border-radius:8px;font-size:14px;font-weight:500;color:#334155}
+.dropdown a:hover{background:#f1f5f9}
+.dropdown a.danger{color:#dc2626}
+
+/* Bildirishnoma paneli */
+.notif-panel{position:fixed;top:0;right:-380px;width:380px;max-width:90vw;height:100vh;background:#fff;
+  box-shadow:-8px 0 30px rgba(0,0,0,.12);z-index:70;transition:right .25s;display:flex;flex-direction:column}
+.notif-panel.open{right:0}
+.notif-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;
+  border-bottom:1px solid var(--border);font-weight:700}
+.notif-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:#94a3b8;gap:14px}
+
+/* Detal sahifa */
+.detail-grid{display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start}
+.meta-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:20px;
+  border-top:1px solid var(--border);padding-top:18px}
+.meta-grid > div{display:flex;flex-direction:column;gap:4px}
+.meta-grid span{font-size:12px;color:#94a3b8}
+.meta-grid b{font-size:14px}
+.comment{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f1f5f9}
+.comment:last-of-type{border-bottom:none}
+
+/* Timeline */
+.timeline{position:relative;padding-left:6px}
+.tl-item{display:flex;gap:14px;padding-bottom:20px;position:relative}
+.tl-item:not(:last-child)::before{content:'';position:absolute;left:6px;top:18px;bottom:-2px;width:2px;background:#e2e8f0}
+.tl-dot{width:14px;height:14px;border-radius:50%;background:#cbd5e1;flex-shrink:0;margin-top:3px;z-index:1}
+.tl-dot.new{background:#2563eb}.tl-dot.approved{background:#f59e0b}.tl-dot.in_progress{background:#0891b2}
+.tl-dot.on_check{background:#7c3aed}.tl-dot.done{background:#16a34a}.tl-dot.rejected{background:#dc2626}
+
+/* Profil */
+.profile-grid{display:grid;grid-template-columns:340px 1fr;gap:20px;align-items:start}
+
+/* Ijrochi statistika */
+.exec-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;text-align:center}
+.exec-stats > div{display:flex;flex-direction:column}
+.exec-stats b{font-size:20px}
+.exec-stats span{font-size:11px;color:#94a3b8}
+.toggle-btn{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:700;
+  background:#e2e8f0;color:#64748b}
+.toggle-btn.on{background:var(--blue);color:#fff}
+
+/* Donut diagrammalar */
+.donuts{display:flex;gap:24px;flex-wrap:wrap;justify-content:space-around}
+.donut-item{text-align:center}
+.donut{width:90px;height:90px;border-radius:50%;display:grid;place-items:center;position:relative}
+.donut::before{content:'';position:absolute;width:66px;height:66px;background:#fff;border-radius:50%}
+.donut span{position:relative;font-size:22px;font-weight:800}
+.donut-label{margin-top:10px;font-size:13px;color:#64748b}
+
+@media(max-width:900px){
+  .detail-grid,.profile-grid{grid-template-columns:1fr}
+  .meta-grid{grid-template-columns:1fr 1fr}
+}
+
+/* ============================================================
+   POLISH — rasmlardagi ko'rinishga yaqinlashtirish
+   ============================================================ */
+:root{
+  --bg:#f4f6f9;
+  --border:#e8ecf1;
+  --muted:#7b8794;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+  --shadow-md:0 4px 16px rgba(16,24,40,.06);
+}
+body{
+  font-family:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
+  font-size:14.5px;letter-spacing:-.1px;color:#1a2230;
+}
+/* Sidebar nozikroq */
+.sidebar{background:#0b1220;width:252px}
+.main{margin-left:252px}
+.sidebar .brand{font-size:22px;font-weight:800;padding:24px 22px}
+.brand-mark{background:linear-gradient(135deg,#38bdf8,#2563eb);border-radius:11px}
+.nav a{font-size:14.5px;padding:11px 14px;border-radius:11px}
+.nav a.active{box-shadow:0 6px 16px rgba(37,99,235,.45)}
+
+/* Topbar */
+.topbar{height:68px;border-bottom:1px solid var(--border);box-shadow:0 1px 0 rgba(16,24,40,.02)}
+.avatar{background:linear-gradient(135deg,#2563eb,#3b82f6);font-weight:700}
+
+/* Sarlavhalar */
+.page-head h1{font-size:27px;font-weight:800;letter-spacing:-.6px}
+.page-head p{color:var(--muted)}
+
+/* Kartalar / panellar yumshoqroq */
+.panel,.stat,.person,.people .panel{border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow)}
+.panel-head{padding:18px 22px}
+.panel-body{padding:22px}
+
+/* Stat kartalar */
+.stat{padding:20px 22px;border-radius:16px}
+.stat .label{font-size:13.5px;color:var(--muted);font-weight:500}
+.stat .val{font-size:30px;font-weight:800;gap:12px;margin-top:8px}
+
+/* Teglar — yumshoq pastel, rasmlardagidek */
+.tag{padding:4px 11px;border-radius:8px;font-size:12px;font-weight:600;letter-spacing:.1px}
+.tag.new{background:#eff6ff;color:#2563eb}
+.tag.approved{background:#fff7ed;color:#ea580c}
+.tag.in_progress{background:#ecfeff;color:#0e7490}
+.tag.on_check{background:#f5f3ff;color:#7c3aed}
+.tag.done{background:#ecfdf5;color:#059669}
+.tag.rejected{background:#fef2f2;color:#dc2626}
+.tag.high{background:#fef2f2;color:#dc2626}
+.tag.medium{background:#fffbeb;color:#d97706}
+.tag.low{background:#f1f5f9;color:#64748b}
+
+/* Tablar (chips) — rasmlardagi pill ko'rinish */
+.chips{gap:8px}
+.chip{padding:8px 15px;border-radius:10px;border:1px solid var(--border);font-size:13.5px;
+  font-weight:600;color:#475569;display:inline-flex;align-items:center;background:#fff;transition:.15s}
+.chip:hover{border-color:#cbd5e1}
+.chip.active{background:#1a2230;color:#fff;border-color:#1a2230}
+.cbadge{background:#eef2f7;color:#64748b}
+
+/* Tugmalar */
+.btn{border-radius:11px;padding:11px 18px;font-weight:600;font-size:14px;transition:.15s}
+.btn-blue{background:#2563eb;box-shadow:0 4px 12px rgba(37,99,235,.25)}
+.btn-blue:hover{background:#1d4ed8;transform:translateY(-1px)}
+.btn-light{border:1px solid var(--border)}
+.btn-light:hover{background:#f8fafc;border-color:#cbd5e1}
+
+/* Jadval */
+thead th{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#9aa4b2;
+  font-weight:600;padding:13px 18px}
+tbody td{padding:15px 18px;font-size:14px}
+tbody tr{transition:background .12s}
+tbody tr:hover{background:#f8fafc}
+
+/* Inputlar */
+.inp,select,.field input,.modal input,.modal textarea,.modal select{
+  border:1px solid var(--border);border-radius:10px}
+.field input:focus,.inp:focus,select:focus{box-shadow:0 0 0 3px rgba(37,99,235,.12);border-color:#2563eb;outline:none}
+
+/* Kategoriya kartalari */
+.cat-card{border-radius:13px;background:#f7f9fc;border:1px solid var(--border)}
+.cat-card:hover{background:#fff;border-color:#dbe3ee}
+
+/* Donut diagrammalar — yupqaroq halqa */
+.donut{width:96px;height:96px}
+.donut::before{width:72px;height:72px}
+.donut span{font-size:23px;font-weight:800;color:#1a2230}
+
+/* Avatar gradient yumshoq */
+.pav{background:linear-gradient(135deg,#2563eb,#3b82f6)}
+
+/* Alert */
+.alert-warn{border-radius:14px}
+
+/* Ijrochi toolbar/amallar */
+.pill-stat{padding:8px 14px;border-radius:10px;font-size:13px;font-weight:700;white-space:nowrap}
+.icon-act{background:none;border:none;cursor:pointer;font-size:15px;padding:6px;border-radius:8px;line-height:1}
+.icon-act:hover{background:#f1f5f9}
+
+/* ===== Ijrochilar sahifasi — rasmga moslangan ===== */
+.people{grid-template-columns:repeat(auto-fill,minmax(248px,268px));gap:18px;justify-content:start}
+.ex-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin-bottom:20px}
+.ex-toolbar input[type=text]{flex:1;min-width:200px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:13.5px}
+.ex-toolbar select{padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:13.5px;color:#475569;min-width:130px}
+.pill-stat{padding:9px 13px;border-radius:10px;font-size:13px;font-weight:700;white-space:nowrap}
+
+.ex-av{width:46px;height:46px;border-radius:50%;flex-shrink:0;position:relative;
+  background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;font-weight:700;font-size:15px;
+  display:grid;place-items:center}
+.ex-dot{position:absolute;bottom:1px;right:1px;width:11px;height:11px;border-radius:50%;border:2px solid #fff}
+.ex-name{font-weight:700;font-size:14.5px;line-height:1.25}
+.ex-pos{font-size:12.5px;color:var(--muted);margin-top:2px}
+.ex-acts{display:flex;gap:4px}
+.icon-act{background:none;border:none;cursor:pointer;font-size:14px;padding:5px;border-radius:7px;line-height:1}
+.icon-act:hover{background:#f1f5f9}
+.ex-info{font-size:12.5px;color:#475569;line-height:2;margin-top:10px}
+.exec-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:14px;text-align:center}
+.exec-stats b{font-size:19px;font-weight:800}
+.exec-stats span{font-size:11px;color:var(--muted)}
+.ex-foot{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:12px}
+
+/* Toggle slayder */
+.switch{display:inline-flex;align-items:center;gap:6px;background:#e2e8f0;border:none;cursor:pointer;
+  padding:3px 10px 3px 4px;border-radius:20px;transition:.2s}
+.switch .switch-knob{width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.switch .switch-txt{font-size:11px;font-weight:700;color:#64748b}
+.switch.on{background:#2563eb;flex-direction:row-reverse;padding:3px 4px 3px 10px}
+.switch.on .switch-txt{color:#fff}
+
+/* ===== Yozuvlarni yengilroq qilish (juda qalin chiqib ketgani uchun) ===== */
+body{font-weight:400;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.page-head h1{font-weight:700}
+h1,h2,h3{font-weight:700}
+.brand{font-weight:700}
+.stat .val{font-weight:700}
+.stat .label{font-weight:400}
+.exec-stats b,.donut span{font-weight:700}
+.panel-head .title{font-weight:600}
+.ex-name,.pname,.uname,.sidebar-foot .uname{font-weight:600}
+strong,b{font-weight:600}
+.tag,.badge,.cbadge,.pill-stat{font-weight:600}
+.nav a{font-weight:500}
+.btn{font-weight:600}
+thead th{font-weight:600}
+.chip{font-weight:500}
+.chip.active{font-weight:600}
+.field label,.modal label{font-weight:500}
+.link-blue,.link{font-weight:600}
+
+/* ===== Sarlavhalarni yanada yengilroq qilish ===== */
+h1,h2,h3{font-weight:600}
+.page-head h1{font-weight:600}
+.auth-card h1{font-weight:700}
+.cat-card .cname,.cname{font-weight:600}
+.detail-grid h2{font-weight:600}
+.modal h3{font-weight:700}
+.brand{font-weight:700}
+
+/* ===== Sidebar yopilishi (desktop) ===== */
+.sidebar{transition:left .22s ease}
+.main{transition:margin-left .22s ease}
+.layout.collapsed .sidebar{left:-252px}
+.layout.collapsed .main{margin-left:0}
+
+/* ===== Profil rasm yuklash ===== */
+.avatar-upload{position:relative;display:inline-block;cursor:pointer}
+.avatar-big{width:104px;height:104px;border-radius:50%;display:grid;place-items:center;
+  background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;font-size:42px;font-weight:700}
+.avatar-img{width:104px;height:104px;border-radius:50%;object-fit:cover;display:block}
+.avatar-cam{position:absolute;bottom:4px;right:4px;width:32px;height:32px;border-radius:50%;
+  background:#2563eb;border:3px solid #fff;display:grid;place-items:center}
+/* Parol ko'z tugmasi */
+.pw-wrap{position:relative}
+.pw-wrap input{width:100%;padding-right:38px}
+.pw-eye{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;
+  cursor:pointer;font-size:15px;opacity:.5}
+.pw-eye:hover{opacity:1}
+/* Topbar avatar rasm */
+.avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover}
+
+/* ===== Topbar avatar rasmni doiraga moslash (overflow tuzatish) ===== */
+.avatar{width:36px;height:36px;flex-shrink:0;overflow:hidden;border-radius:50%;display:grid;place-items:center}
+.avatar img{width:36px;height:36px;object-fit:cover;border-radius:50%;display:block}
+.user-pill{align-items:center}
+
+/* ===== Zayavka biriktirmalari (rasm/video) ===== */
+.attach-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+.attach{width:100%;height:120px;object-fit:cover;border-radius:10px;border:1px solid var(--border);background:#000}
+
+/* ===== Modal scroll (uzun forma uchun) ===== */
+.modal{max-height:88vh;overflow-y:auto}
+/* Alohida fayl yuklash bloki */
+.upload-box{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1.5px dashed #cbd5e1;
+  border-radius:12px;background:#f8fafc;margin-bottom:14px}
+.upload-ico{width:40px;height:40px;border-radius:10px;background:#eff6ff;display:grid;place-items:center;font-size:18px}
+/* Biriktirmalar — kattaroq, video to'liq kenglikda */
+.attach-grid{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+.attach{height:180px}
+.attach-grid video.attach{grid-column:1 / -1;width:100%;height:360px;object-fit:contain;background:#000;border-radius:10px}
+
+/* Yuklash sanagichi */
+.upload-cnt{font-size:12px;color:#059669;margin:-8px 0 10px;font-weight:600}
+
+/* Заказчик avatar */
+.cust-ava{width:40px;height:40px;border-radius:50%;object-fit:cover;display:block}
+.cust-ava-def{display:grid;place-items:center;background:linear-gradient(135deg,#3b82f6,#2563eb)}
+
+/* ===== Bildirishnoma (notification) ===== */
+.notif-badge{position:absolute;top:-3px;right:-3px;min-width:17px;height:17px;padding:0 4px;
+  background:#ef4444;color:#fff;font-size:10px;font-weight:700;border-radius:9px;
+  display:grid;place-items:center;border:2px solid #fff}
+.notif-item{display:block;padding:12px 16px;border-bottom:1px solid var(--border);
+  text-decoration:none;color:#1e293b;font-size:14px;transition:background .15s}
+.notif-item:hover{background:#f8fafc}
+.notif-item.unread{background:#eff6ff}
+.notif-item.unread:hover{background:#dbeafe}
+.notif-time{font-size:11px;color:#94a3b8;margin-top:3px}
+
+/* ============ MOBIL YAXSHILANISH (telefon) ============ */
+@media(max-width:760px){
+  .content{padding:14px}
+  /* Sarlavha va tugmalar */
+  .page-head{flex-direction:column;align-items:stretch;gap:10px}
+  .page-head h1{font-size:20px}
+  .head-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .head-actions .btn{flex:1;text-align:center;justify-content:center}
+  /* Tugmalar barmoqqa qulay */
+  .btn{padding:11px 15px}
+  /* Status chiplari — yon scroll */
+  .chips{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:8px;padding-bottom:6px;-webkit-overflow-scrolling:touch}
+  .chips::-webkit-scrollbar{height:0}
+  .chip{white-space:nowrap;flex:0 0 auto}
+  /* Modal */
+  .modal{width:94vw;padding:18px}
+  .modal .field input,.modal .field select,.modal .field textarea{font-size:16px}
+  /* Profil bitta ustun */
+  .profile-grid{grid-template-columns:1fr;gap:14px}
+  /* Biriktirmalar */
+  .attach-grid{grid-template-columns:1fr 1fr}
+  .attach{height:120px}
+  .attach-grid video.attach{height:200px}
+  /* Jadval-karta ixcham */
+  tbody tr{padding:4px 4px 8px}
+  tbody td{padding:5px 12px;font-size:13px}
+  tbody td::before{font-size:11px;margin-bottom:0}
+  /* Topbar */
+  .topbar{padding:0 12px}
+  .user-pill span:not(.avatar){display:none}
+  /* Forma maydonlari telefonда to'liq */
+  .field input,.field select,.field textarea{font-size:16px}
+  /* meta-grid bitta ustun */
+  .meta-grid{grid-template-columns:1fr 1fr !important}
+}
+@media(max-width:420px){
+  .stats{grid-template-columns:1fr !important}
+  .attach-grid{grid-template-columns:1fr}
+  .meta-grid{grid-template-columns:1fr !important}
+}
+
+/* Inline rol tanlash */
+.role-select{padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;
+  font-weight:600;background:#f8fafc;cursor:pointer;color:#334155}
+.role-select:hover{border-color:#2563eb}

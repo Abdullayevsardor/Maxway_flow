@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}Админ панель{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Админ панель</h1><p>Управление пользователями, категориями и филиалами</p></div>
+</div>
+
+<!-- FOYDALANUVCHILAR -->
+<div class="panel">
+  <div class="panel-head">
+    <div class="title">👥 Пользователи <span class="badge">{{ users|length }}</span></div>
+    <button class="btn btn-blue" onclick="open_('user')">＋ Добавить пользователя</button>
+  </div>
+  <table>
+    <thead><tr><th>Имя</th><th>Email</th><th>Роль</th><th>Категория</th><th></th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td data-label="Имя"><b>{{ u.full_name }}</b></td>
+        <td data-label="Email">{{ u.email }}</td>
+        <td data-label="Роль"><span class="tag {{ 'high' if u.role.value=='admin' else ('new' if u.role.value=='executor' else 'on_check') }}">{{ ROLE_LABELS.get(u.role.value) }}</span></td>
+        <td data-label="Категория">{% if u.department %}{{ u.department.icon }} {{ u.department.name }}{% else %}—{% endif %}</td>
+        <td data-label="" style="text-align:right;white-space:nowrap">
+          <button class="btn btn-light" style="padding:7px 12px"
+            onclick='editUser({{ {"id":u.id,"full_name":u.full_name,"role":u.role.value,"department_id":u.department_id or "","phone":u.phone or "","telegram_chat_id":u.telegram_chat_id or ""}|tojson }})'>✏ Изменить</button>
+          {% if u.id != user.id %}
+          <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline"
+                onsubmit="return confirm('«{{ u.full_name }}» ўчирилсинми?')">
+            <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- KATEGORIYALAR -->
+<div class="panel">
+  <div class="panel-head">
+    <div class="title">🏷 Категории (отделы) <span class="badge">{{ departments|length }} / 10</span></div>
+    {% if departments|length < 10 %}
+    <button class="btn btn-blue" onclick="open_('cat')">＋ Добавить категорию</button>
+    {% endif %}
+  </div>
+  <table>
+    <thead><tr><th>Белги</th><th>Название</th><th>Заявок</th><th></th></tr></thead>
+    <tbody>
+      {% for d in departments %}
+      <tr>
+        <td data-label="Белги"><span class="cat-ico" style="display:inline-grid;width:34px;height:34px;color:{{ d.color }}">{{ d.icon }}</span></td>
+        <td data-label="Название"><b>{{ d.name }}</b></td>
+        <td data-label="Заявок">{{ d.requests|length }}</td>
+        <td data-label="" style="text-align:right;white-space:nowrap">
+          <button class="btn btn-light" style="padding:7px 12px"
+            onclick='editCat({{ {"id":d.id,"name":d.name,"icon":d.icon,"color":d.color}|tojson }})'>✏ Изменить</button>
+          <form method="post" action="/admin/categories/{{ d.id }}/delete" style="display:inline"
+                onsubmit="return confirm('«{{ d.name }}» ва унга тегишли заявкалар ўчирилади. Давом этасизми?')">
+            <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="4" class="empty">Категории нет</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- FILIALLAR -->
+<div class="panel">
+  <div class="panel-head">
+    <div class="title">📍 Филиалы <span class="badge">{{ branches|length }}</span></div>
+    <button class="btn btn-blue" onclick="open_('branch')">＋ Добавить филиал</button>
+  </div>
+  <table>
+    <thead><tr><th>Название</th><th>Локация (адрес)</th><th></th></tr></thead>
+    <tbody>
+      {% for b in branches %}
+      <tr>
+        <td data-label="Название"><b>{{ b.name }}</b></td>
+        <td data-label="Локация" style="color:#475569">📍 {{ b.location or "—" }}</td>
+        <td data-label="" style="text-align:right;white-space:nowrap">
+          <button class="btn btn-light" style="padding:7px 12px"
+            onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or ""}|tojson }})'>✏ Изменить</button>
+          <form method="post" action="/admin/branches/{{ b.id }}/delete" style="display:inline"
+                onsubmit="return confirm('«{{ b.name }}» филиали ўчирилсинми?')">
+            <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="3" class="empty">Филиалы не добавлены</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ===== MODALLAR ===== -->
+<!-- Foydalanuvchi qo'shish -->
+<div class="modal-bg" id="modal-user">
+  <div class="modal">
+    <h3>Добавить пользователя</h3>
+    <form method="post" action="/admin/users/create">
+      <div class="field"><label>Полное имя</label><input type="text" name="full_name" required></div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Email</label><input type="email" name="email" required></div>
+        <div class="field" style="flex:1"><label>Пароль</label><input type="text" name="password" value="12345678"></div>
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Роль</label>
+          <select name="role"><option value="executor">Исполнитель</option><option value="admin">Админ</option><option value="client">Клиент</option></select></div>
+        <div class="field" style="flex:1"><label>Категория</label>
+          <select name="department_id"><option value="">— нет —</option>
+            {% for d in departments %}<option value="{{ d.id }}">{{ d.icon }} {{ d.name }}</option>{% endfor %}
+          </select></div>
+      </div>
+      <div class="field"><label>Телефон</label><input type="text" name="phone" value="+998 "></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="close_('user')">Отмена</button>
+        <button type="submit" class="btn btn-blue">Добавить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Foydalanuvchi tahrirlash -->
+<div class="modal-bg" id="modal-userEdit">
+  <div class="modal">
+    <h3>Изменить пользователя</h3>
+    <form method="post" id="userEditForm">
+      <div class="field"><label>Полное имя</label><input type="text" name="full_name" id="u_full_name" required></div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Телефон</label><input type="text" name="phone" id="u_phone"></div>
+        <div class="field" style="flex:1"><label>Роль</label>
+          <select name="role" id="u_role"><option value="executor">Исполнитель</option><option value="admin">Админ</option><option value="client">Клиент</option></select></div>
+      </div>
+      <div class="field"><label>Telegram chat ID (для уведомлений бота)</label>
+        <input type="text" name="telegram_chat_id" id="u_telegram_chat_id" placeholder="напр. 123456789"></div>
+      <div class="field"><label>Категория</label>
+        <select name="department_id" id="u_department_id"><option value="">— нет —</option>
+          {% for d in departments %}<option value="{{ d.id }}">{{ d.icon }} {{ d.name }}</option>{% endfor %}
+        </select></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="close_('userEdit')">Отмена</button>
+        <button type="submit" class="btn btn-blue">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Kategoriya qo'shish -->
+<div class="modal-bg" id="modal-cat">
+  <div class="modal">
+    <h3>Добавить категорию</h3>
+    <form method="post" action="/admin/categories/create">
+      <div style="display:flex;gap:12px;align-items:flex-end">
+        <div class="field" style="flex:2"><label>Название</label><input type="text" name="name" required placeholder="Дизайн"></div>
+        <div class="field" style="width:80px"><label>Белги</label><input type="text" name="icon" value="🗂️" maxlength="4" style="text-align:center;font-size:18px"></div>
+        <div class="field" style="width:70px"><label>Цвет</label><input type="color" name="color" value="#2563eb" style="height:42px;padding:4px"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="close_('cat')">Отмена</button>
+        <button type="submit" class="btn btn-blue">Добавить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Kategoriya tahrirlash -->
+<div class="modal-bg" id="modal-catEdit">
+  <div class="modal">
+    <h3>Изменить категорию</h3>
+    <form method="post" id="catEditForm">
+      <div style="display:flex;gap:12px;align-items:flex-end">
+        <div class="field" style="flex:2"><label>Название</label><input type="text" name="name" id="c_name" required></div>
+        <div class="field" style="width:80px"><label>Белги</label><input type="text" name="icon" id="c_icon" maxlength="4" style="text-align:center;font-size:18px"></div>
+        <div class="field" style="width:70px"><label>Цвет</label><input type="color" name="color" id="c_color" style="height:42px;padding:4px"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="close_('catEdit')">Отмена</button>
+        <button type="submit" class="btn btn-blue">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Filial qo'shish -->
+<div class="modal-bg" id="modal-branch">
+  <div class="modal">
+    <h3>Добавить филиал</h3>
+    <form method="post" action="/admin/branches/create">
+      <div class="field"><label>Название / код</label><input type="text" name="name" required placeholder="MW06-NEXT"></div>
+      <div class="field"><label>Локация (полный адрес)</label>
+        <textarea name="location" placeholder="Ракатбаши махалля, Яккасарайский район, Ташкент, 100000, Узбекистан"></textarea></div>
+      <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px">
+        <p style="font-weight:500;color:#475569;margin-bottom:10px;font-size:13px">🔑 Доступ для филиала (необязательно) — филиал видит только свои заявки</p>
+        <div style="display:flex;gap:12px">
+          <div class="field" style="flex:1"><label>Email (логин)</label><input type="email" name="login_email" placeholder="branch@maxway.uz"></div>
+          <div class="field" style="flex:1"><label>Пароль</label><input type="text" name="password" placeholder="12345678"></div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="close_('branch')">Отмена</button>
+        <button type="submit" class="btn btn-blue">Добавить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Filial tahrirlash -->
+<div class="modal-bg" id="modal-branchEdit">
+  <div class="modal">
+    <h3>Изменить филиал</h3>
+    <form method="post" id="branchEditForm">
+      <div class="field"><label>Название / код</label><input type="text" name="name" id="b_name" required></div>
+      <div class="field"><label>Локация (полный адрес)</label><textarea name="location" id="b_location"></textarea></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="close_('branchEdit')">Отмена</button>
+        <button type="submit" class="btn btn-blue">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function open_(n){document.getElementById('modal-'+n).classList.add('open')}
+  function close_(n){document.getElementById('modal-'+n).classList.remove('open')}
+  document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
+
+  function editUser(d){
+    document.getElementById('userEditForm').action='/admin/users/'+d.id+'/edit';
+    document.getElementById('u_full_name').value=d.full_name||'';
+    document.getElementById('u_phone').value=d.phone||'+998 ';
+    document.getElementById('u_role').value=d.role||'executor';
+    document.getElementById('u_department_id').value=d.department_id||'';
+    document.getElementById('u_telegram_chat_id').value=d.telegram_chat_id||'';
+    open_('userEdit');
+  }
+  function editCat(d){
+    document.getElementById('catEditForm').action='/admin/categories/'+d.id+'/edit';
+    document.getElementById('c_name').value=d.name||'';
+    document.getElementById('c_icon').value=d.icon||'';
+    document.getElementById('c_color').value=d.color||'#2563eb';
+    open_('catEdit');
+  }
+  function editBranch(d){
+    document.getElementById('branchEditForm').action='/admin/branches/'+d.id+'/edit';
+    document.getElementById('b_name').value=d.name||'';
+    document.getElementById('b_location').value=d.location||'';
+    open_('branchEdit');
+  }
+</script>
+{% endblock %}

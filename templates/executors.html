@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Исполнители{% endblock %}
+{% set active_cnt = people|selectattr('is_active')|list|length %}
+{% set specs = people|map(attribute='specialization')|select|unique|list %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Исполнители</h1>
+    <p>Всего: {{ people|length }} · Активных: {{ active_cnt }}</p></div>
+  <div class="head-actions">
+    <button class="btn btn-blue" onclick="openAdd()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+      Добавить исполнителя
+    </button>
+  </div>
+</div>
+
+<!-- Ixcham toolbar -->
+<div class="panel ex-toolbar">
+  <input type="text" id="search" onkeyup="filterCards()" placeholder="🔍 Поиск по имени, должности, специал...">
+  <select id="specFilter" onchange="filterCards()">
+    <option value="">Специализация</option>
+    {% for s in specs %}<option value="{{ s|lower }}">{{ s }}</option>{% endfor %}
+  </select>
+  <select id="statusFilter" onchange="filterCards()">
+    <option value="">Все</option>
+    <option value="active">Активные</option>
+    <option value="inactive">Неактивные</option>
+  </select>
+  <span class="pill-stat" style="background:#eff6ff;color:#2563eb">📄 Всего: {{ people|length }}</span>
+  <span class="pill-stat" style="background:#ecfdf5;color:#059669">✓ Активных: {{ active_cnt }}</span>
+</div>
+
+<div class="people" id="cards">
+  {% for p in people %}
+  {% set parts = p.full_name.split() %}
+  {% set initials = (parts[0][0] ~ (parts[1][0] if parts|length>1 else ''))|upper %}
+  <div class="panel exec-card" style="margin:0"
+       data-name="{{ p.full_name|lower }} {{ (p.position or '')|lower }} {{ (p.specialization or '')|lower }}"
+       data-spec="{{ (p.specialization or '')|lower }}"
+       data-active="{{ '1' if p.is_active else '0' }}">
+    <div class="panel-body" style="padding:18px">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div class="ex-av">{{ initials or '?' }}
+          <span class="ex-dot" style="background:{{ '#22c55e' if p.is_active else '#cbd5e1' }}"></span>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div class="ex-name">{{ p.full_name }}</div>
+          <div class="ex-pos">{{ p.position or ROLE_LABELS.get(p.role.value).title() }}</div>
+        </div>
+        <div class="ex-acts">
+          <button class="icon-act" title="Изменить"
+            onclick='openEdit({{ {"id":p.id,"full_name":p.full_name,"position":p.position or "","specialization":p.specialization or "","phone":p.phone or "","schedule":p.schedule or "","experience":p.experience or "","telegram":p.telegram or ""}|tojson }})'>✏</button>
+          <form method="post" action="/executors/{{ p.id }}/delete" onsubmit="return confirm('«{{ p.full_name }}» ўчирилсинми?')">
+            <button class="icon-act" title="Удалить" style="color:#dc2626">🗑</button>
+          </form>
+        </div>
+      </div>
+
+      {% if p.specialization or p.department %}
+      <span class="tag" style="background:#eff6ff;color:#2563eb;margin-top:10px;display:inline-block">🏷 {{ p.specialization or p.department.name }}</span>
+      {% endif %}
+
+      <div class="ex-info">
+        {% if p.phone %}<div>📞 {{ p.phone }}</div>{% endif %}
+        <div>✉ {{ p.email }}</div>
+        {% if p.schedule %}<div>🕐 {{ p.schedule }}</div>{% endif %}
+        {% if p.experience %}<div>⭐ Стаж: <b>{{ p.experience }}</b></div>{% endif %}
+        {% if p.telegram %}<div style="color:#2563eb">✈ Telegram привязан</div>{% endif %}
+      </div>
+
+      <div class="exec-stats">
+        <div><b>{{ stats[p.id].total }}</b><span>Всего</span></div>
+        <div><b style="color:#0891b2">{{ stats[p.id].in_progress }}</b><span>В работе</span></div>
+        <div><b style="color:#16a34a">{{ stats[p.id].done }}</b><span>Выполнено</span></div>
+      </div>
+      <div class="bar-track" style="margin:10px 0">
+        <div class="bar-fill" style="width:{{ (stats[p.id].done / stats[p.id].total * 100) if stats[p.id].total else 0 }}%;background:#f59e0b"></div>
+      </div>
+      <a href="/requests" class="link-blue" style="display:block;margin-bottom:10px;font-size:13.5px">📄 Смотреть заявки ({{ stats[p.id].total }})</a>
+
+      <div class="ex-foot">
+        <span style="font-size:13px;color:{{ '#16a34a' if p.is_active else '#94a3b8' }}">● {{ 'Активен' if p.is_active else 'Неактивен' }}</span>
+        <form method="post" action="/executors/{{ p.id }}/toggle">
+          <button type="submit" class="switch {{ 'on' if p.is_active }}" title="Вкл/Выкл">
+            <span class="switch-knob"></span><span class="switch-txt">{{ 'Вкл' if p.is_active else 'Выкл' }}</span>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% else %}<div class="empty">Ходимлар йўқ</div>{% endfor %}
+</div>
+
+<!-- Qo'shish modal -->
+<div class="modal-bg" id="modal-add">
+  <div class="modal">
+    <h3>Добавить исполнителя</h3>
+    <form method="post" action="/executors/create">
+      <div class="field"><label>Полное имя</label><input type="text" name="full_name" required></div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Email</label><input type="email" name="email" required></div>
+        <div class="field" style="flex:1"><label>Телефон</label><input type="text" name="phone"></div>
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Должность</label><input type="text" name="position" placeholder="Инженер"></div>
+        <div class="field" style="flex:1"><label>Специализация</label><input type="text" name="specialization" placeholder="ИТ"></div>
+      </div>
+      <div class="field"><label>Пароль (по умолчанию 12345678)</label><input type="text" name="password" value="12345678"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="closeModal('add')">Отмена</button>
+        <button type="submit" class="btn btn-blue">Добавить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Tahrirlash modal -->
+<div class="modal-bg" id="modal-edit">
+  <div class="modal">
+    <h3>Изменить исполнителя</h3>
+    <form method="post" id="editForm">
+      <div class="field"><label>Полное имя</label><input type="text" name="full_name" id="e_full_name" required></div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Должность</label><input type="text" name="position" id="e_position"></div>
+        <div class="field" style="flex:1"><label>Специализация</label><input type="text" name="specialization" id="e_specialization"></div>
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Телефон</label><input type="text" name="phone" id="e_phone"></div>
+        <div class="field" style="flex:1"><label>График</label><input type="text" name="schedule" id="e_schedule" placeholder="5/2 09:00–18:00"></div>
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Стаж</label><input type="text" name="experience" id="e_experience" placeholder="3 года"></div>
+        <div class="field" style="flex:1"><label>Telegram</label><input type="text" name="telegram" id="e_telegram" placeholder="@username"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="closeModal('edit')">Отмена</button>
+        <button type="submit" class="btn btn-blue">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function openAdd(){document.getElementById('modal-add').classList.add('open')}
+  function closeModal(n){document.getElementById('modal-'+n).classList.remove('open')}
+  function openEdit(d){
+    document.getElementById('editForm').action='/executors/'+d.id+'/edit';
+    ['full_name','position','specialization','phone','schedule','experience','telegram'].forEach(k=>{
+      document.getElementById('e_'+k).value = d[k] || '';
+    });
+    document.getElementById('modal-edit').classList.add('open');
+  }
+  document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
+  function filterCards(){
+    const q=document.getElementById('search').value.toLowerCase();
+    const sp=document.getElementById('specFilter').value;
+    const st=document.getElementById('statusFilter').value;
+    document.querySelectorAll('.exec-card').forEach(c=>{
+      let ok = c.dataset.name.includes(q);
+      if(sp) ok = ok && c.dataset.spec===sp;
+      if(st==='active') ok = ok && c.dataset.active==='1';
+      if(st==='inactive') ok = ok && c.dataset.active==='0';
+      c.style.display = ok ? '' : 'none';
+    });
+  }
+</script>
+{% endblock %}

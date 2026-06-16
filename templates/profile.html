@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Профиль{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Профиль</h1><p>Управление личными данными</p></div></div>
+
+{% if saved and not msg %}<div class="alert-warn" style="background:#f0fdf4;border-color:#bbf7d0;color:#15803d">✓ Сохранено</div>{% endif %}
+{% if msg %}<div class="alert-warn" style="background:#fef2f2;border-color:#fecaca;color:#b91c1c">⚠ {{ msg }}</div>{% endif %}
+
+<form method="post" action="/profile/update" enctype="multipart/form-data">
+<div class="profile-grid">
+  <!-- karta + rasm yuklash -->
+  <div class="panel">
+    <div class="panel-body" style="text-align:center">
+      <label class="avatar-upload" title="Загрузить фото">
+        {% if user.avatar %}
+        <img src="{{ user.avatar }}" alt="avatar" class="avatar-img">
+        {% else %}
+        <span class="avatar-big">{{ user.full_name[0]|upper }}</span>
+        {% endif %}
+        <span class="avatar-cam">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" width="16" height="16"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </span>
+        <input type="file" name="photo" accept="image/*" hidden onchange="previewPhoto(this)">
+      </label>
+      <h2 style="font-size:20px;margin-top:14px">{{ user.full_name }}</h2>
+      <p style="color:#94a3b8;font-size:14px;margin:6px 0">✉ {{ user.email }}</p>
+      <span class="tag" style="background:#eff6ff;color:#2563eb">{{ ROLE_LABELS.get(user.role.value).title() }}</span>
+      {% if user.department %}
+      <p style="color:#94a3b8;font-size:12px;margin-top:16px">Категории</p>
+      <span class="tag" style="background:#f5f3ff;color:#7c3aed;margin-top:6px">{{ user.department.name }}</span>
+      {% endif %}
+      <p style="color:#94a3b8;font-size:12px;margin-top:14px">Нажмите на фото, чтобы изменить</p>
+    </div>
+  </div>
+
+  <!-- forma -->
+  <div class="panel">
+    <div class="panel-head"><div class="title">👤 Редактировать профиль</div></div>
+    <div class="panel-body">
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        <div class="field" style="flex:1;min-width:200px"><label>Полное имя</label>
+          <input type="text" name="full_name" value="{{ user.full_name }}" required></div>
+        <div class="field" style="flex:1;min-width:200px"><label>Телефон</label>
+          <input type="text" name="phone" value="{{ user.phone or '+998 ' }}" placeholder="+998 90 123 45 67"></div>
+      </div>
+      <div class="field"><label>Email (изменить нельзя)</label>
+        <input type="email" value="{{ user.email }}" disabled style="background:#f1f5f9;color:#94a3b8"></div>
+      {% if user.department %}
+      <div class="field"><label>🏷 Категории (назначены администратором)</label>
+        <div style="padding:10px;border:1px solid var(--border);border-radius:10px;background:#f8fafc">
+          <span class="tag" style="background:#f5f3ff;color:#7c3aed">{{ user.department.name }}</span>
+        </div></div>
+      {% endif %}
+      <div class="field"><label>О себе</label>
+        <textarea name="bio" id="bio" maxlength="1000" oninput="cnt()"
+          style="width:100%;min-height:120px;padding:12px;resize:vertical"
+          placeholder="Расскажите о себе, опыте, специализации...">{{ user.bio }}</textarea>
+        <div style="text-align:right;color:#94a3b8;font-size:12px;margin-top:4px"><span id="bioCnt">{{ user.bio|length }}</span> / 1000</div>
+      </div>
+
+      <div style="border-top:1px solid var(--border);margin:8px 0 16px;padding-top:16px">
+        <p style="font-weight:600;margin-bottom:14px">Смена пароля (необязательно)</p>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <div class="field" style="flex:1;min-width:150px"><label>Текущий пароль</label>
+            <div class="pw-wrap"><input type="password" name="current_password" id="pw1"><button type="button" class="pw-eye" onclick="eye('pw1')">👁</button></div></div>
+          <div class="field" style="flex:1;min-width:150px"><label>Новый пароль</label>
+            <div class="pw-wrap"><input type="password" name="new_password" id="pw2"><button type="button" class="pw-eye" onclick="eye('pw2')">👁</button></div></div>
+          <div class="field" style="flex:1;min-width:150px"><label>Подтвердить пароль</label>
+            <div class="pw-wrap"><input type="password" name="confirm_password" id="pw3"><button type="button" class="pw-eye" onclick="eye('pw3')">👁</button></div></div>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-blue">Сохранить</button>
+    </div>
+  </div>
+</div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+  function eye(id){const i=document.getElementById(id);i.type=i.type==='password'?'text':'password';}
+  function cnt(){document.getElementById('bioCnt').textContent=document.getElementById('bio').value.length;}
+  function previewPhoto(inp){
+    if(inp.files && inp.files[0]){
+      const r=new FileReader();
+      r.onload=e=>{
+        let img=document.querySelector('.avatar-img');
+        const span=document.querySelector('.avatar-big');
+        if(!img){
+          img=document.createElement('img');img.className='avatar-img';
+          if(span) span.replaceWith(img);
+        }
+        img.src=e.target.result;
+      };
+      r.readAsDataURL(inp.files[0]);
+    }
+  }
+</script>
+{% endblock %}
