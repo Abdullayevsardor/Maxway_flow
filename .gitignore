@@ -7,10 +7,8 @@ maxway_url.txt
 *.db
 *.db-wal
 *.db-shm
-# static/uploads/avatar_*
+static/uploads/avatar_*
 static/uploads/requests/req_*
-static/uploads/requests/*
-!static/uploads/requests/.gitkeep
 
 # Python
 venv/

@@ -1,0 +1,4 @@
+ (Variables bo'limи):
+
+MAXWAY_BOT_TOKEN = Telegram tokeningiz
+MAXWAY_URL = Railway bergan manzил (masalan https://maxway-production.up.railway.app) — Telegram tugmasi to'g'ri ishlashi uchun.

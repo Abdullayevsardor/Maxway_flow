@@ -15,8 +15,8 @@ if DB_URL:
     engine = create_engine(
         DB_URL,
         pool_pre_ping=True,     # uzilган ulanишни tekshiradi
-        pool_size=10,
-        max_overflow=20,
+        pool_size=5,
+        max_overflow=5,
         pool_recycle=1800,
     )
 else:

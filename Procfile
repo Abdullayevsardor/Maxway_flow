@@ -1,1 +1,1 @@
-web: python init_db.py && gunicorn main:app -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:$PORT --timeout 120 --access-logfile -
+web: python init_db.py && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
