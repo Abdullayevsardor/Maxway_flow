@@ -17,26 +17,34 @@ from app.database import Base, engine, get_db, SessionLocal
 from app import models, auth
 from app.models import Role, Status, Priority
 
+print(">>> [MAXWAY] create_all boshlandi", flush=True)
 Base.metadata.create_all(bind=engine)
+print(">>> [MAXWAY] create_all tugadi", flush=True)
 
 
 def _ensure_columns():
-    """Eski bazaga yetishmagan ustunlarни qo'shadi (ma'lumot o'chmaydi)."""
+    """Eski bazaga yetishmagan ustunlarни qo'shadi (SQLite + Postgres mos)."""
+    from sqlalchemy import inspect as sa_inspect
     checks = [("attachments", "stage", "VARCHAR(10) DEFAULT 'request'")]
-    with engine.connect() as conn:
+    try:
+        insp = sa_inspect(engine)
+        tables = insp.get_table_names()
         for table, col, ddl in checks:
-            try:
-                cols = [r[1] for r in conn.exec_driver_sql(
-                    f"PRAGMA table_info({table})").fetchall()]
-                if col not in cols:
+            if table not in tables:
+                continue
+            cols = [c["name"] for c in insp.get_columns(table)]
+            if col not in cols:
+                with engine.begin() as conn:
                     conn.exec_driver_sql(
                         f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
-                    conn.commit()
-            except Exception:
-                pass
+                print(f">>> [MAXWAY] '{col}' ustuni '{table}' ga qo'shildi", flush=True)
+    except Exception as e:
+        print(">>> [MAXWAY] ensure_columns xato:", e, flush=True)
 
 
+print(">>> [MAXWAY] ensure_columns boshlandi", flush=True)
 _ensure_columns()
+print(">>> [MAXWAY] ensure_columns tugadi", flush=True)
 
 
 def _auto_seed():
@@ -48,16 +56,21 @@ def _auto_seed():
         if not has_user:
             import seed as _seed
             _seed.seed()
-            print("✅ Demo ma'lumot yaratildi (auto-seed)")
+            print(">>> [MAXWAY] Demo ma'lumot yaratildi (auto-seed)", flush=True)
+        else:
+            print(">>> [MAXWAY] Foydalanuvchи bor — seed o'tkazib yuborildi", flush=True)
     except Exception as e:
-        print("auto-seed xato:", e)
+        print(">>> [MAXWAY] auto-seed xato:", e, flush=True)
 
 
+print(">>> [MAXWAY] auto_seed boshlandi", flush=True)
 _auto_seed()
+print(">>> [MAXWAY] auto_seed tugadi — ilova yaratilmoqda", flush=True)
 
 app = FastAPI(title="MAXWAY")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+print(">>> [MAXWAY] ilova tayyor ✅", flush=True)
 
 STATUS_LABELS = {
     "new": "Новая", "approved": "Одобрена", "in_progress": "В работе",
