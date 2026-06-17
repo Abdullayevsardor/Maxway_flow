@@ -26,7 +26,7 @@ if not exist maxway.db (
 echo [4/4] Server ishga tushmoqda...
 echo.
 echo  Brauzerda oching:  http://127.0.0.1:8000
-echo  Login: a.ruzikulov@gmail.com   Parol: 12345678
+echo  Login: asliddin@gmail.com   Parol: 12345678
 echo  To'xtatish uchun: Ctrl + C
 echo.
 uvicorn main:app --reload

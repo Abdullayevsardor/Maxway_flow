@@ -22,7 +22,7 @@
         <td data-label="Категория">{% if u.department %}{{ u.department.icon }} {{ u.department.name }}{% else %}—{% endif %}</td>
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
-            onclick='editUser({{ {"id":u.id,"full_name":u.full_name,"role":u.role.value,"department_id":u.department_id or "","phone":u.phone or "","telegram_chat_id":u.telegram_chat_id or ""}|tojson }})'>✏ Изменить</button>
+            onclick='editUser({{ {"id":u.id,"full_name":u.full_name,"email":u.email,"role":u.role.value,"department_id":u.department_id or "","phone":u.phone or "","telegram_chat_id":u.telegram_chat_id or ""}|tojson }})'>✏ Изменить</button>
           {% if u.id != user.id %}
           <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline"
                 onsubmit="return confirm('«{{ u.full_name }}» ўчирилсинми?')">
@@ -127,6 +127,7 @@
     <h3>Изменить пользователя</h3>
     <form method="post" id="userEditForm">
       <div class="field"><label>Полное имя</label><input type="text" name="full_name" id="u_full_name" required></div>
+      <div class="field"><label>Email (логин)</label><input type="email" name="email" id="u_email" required></div>
       <div style="display:flex;gap:12px">
         <div class="field" style="flex:1"><label>Телефон</label><input type="text" name="phone" id="u_phone"></div>
         <div class="field" style="flex:1"><label>Роль</label>
@@ -229,6 +230,7 @@
   function editUser(d){
     document.getElementById('userEditForm').action='/admin/users/'+d.id+'/edit';
     document.getElementById('u_full_name').value=d.full_name||'';
+    document.getElementById('u_email').value=d.email||'';
     document.getElementById('u_phone').value=d.phone||'+998 ';
     document.getElementById('u_role').value=d.role||'executor';
     document.getElementById('u_department_id').value=d.department_id||'';

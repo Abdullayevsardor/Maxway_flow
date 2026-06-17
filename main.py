@@ -448,6 +448,27 @@ def reject_request(req_id: int, request: Request, reason: str = Form(""),
     return RedirectResponse(f"/requests/{req_id}", 302)
 
 
+@app.post("/requests/{req_id}/delete")
+def delete_request(req_id: int, request: Request, db: Session = Depends(get_db)):
+    """Заявкани butunlay o'chiradi — faqat admin."""
+    user = current_user(request, db)
+    if not user or user.role != Role.admin:
+        return RedirectResponse("/login", 302)
+    r = db.get(models.Request, req_id)
+    if r:
+        # diskдаги fayllarни ham o'chiramiz
+        for att in r.attachments:
+            try:
+                fp = att.file_path.lstrip("/")
+                if os.path.exists(fp):
+                    os.remove(fp)
+            except Exception:
+                pass
+        db.delete(r)   # comments/history/attachments cascade bilan o'chadi
+        db.commit()
+    return RedirectResponse("/requests", 302)
+
+
 @app.post("/requests/{req_id}/status")
 def change_status(req_id: int, request: Request, status: str = Form(...),
                   db: Session = Depends(get_db)):
@@ -805,7 +826,8 @@ def admin_user_delete(uid: int, request: Request, db: Session = Depends(get_db))
 
 @app.post("/admin/users/{uid}/edit")
 def admin_user_edit(uid: int, request: Request, full_name: str = Form(...),
-                    role: str = Form("executor"), department_id: Optional[int] = Form(None),
+                    email: str = Form(""), role: str = Form("executor"),
+                    department_id: Optional[int] = Form(None),
                     phone: str = Form(""), telegram_chat_id: str = Form(""),
                     db: Session = Depends(get_db)):
     user = current_user(request, db)
@@ -814,6 +836,13 @@ def admin_user_edit(uid: int, request: Request, full_name: str = Form(...),
     p = db.get(models.User, uid)
     if p:
         p.full_name = full_name.strip()
+        # email — boshqa odamda band bo'lmasa o'zgartiramiz
+        new_email = email.lower().strip()
+        if new_email and new_email != p.email:
+            taken = db.query(models.User).filter(
+                models.User.email == new_email, models.User.id != uid).first()
+            if not taken:
+                p.email = new_email
         p.role = Role(role)
         p.department_id = department_id
         p.phone = phone.strip()

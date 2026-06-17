@@ -30,9 +30,9 @@ def seed():
 
     it = db.query(models.Department).filter(models.Department.name == "ИТ").first()
 
-    if not db.query(models.User).filter(models.User.email == "a.ruzikulov@gmail.com").first():
+    if not db.query(models.User).filter(models.User.email == "asliddin@gmail.com").first():
         db.add(models.User(
-            full_name="Aslidin Ruzikulov", email="a.ruzikulov@gmail.com",
+            full_name="Aslidin Ruzikulov", email="asliddin@gmail.com",
             hashed_password=auth.hash_password("12345678"), role=Role.admin,
             department_id=it.id, phone="+998913216163", position="Начальник отдела ИТ",
             specialization="ИТ и сети", schedule="5/2 09:00–18:00", experience="10 лет",
@@ -40,13 +40,13 @@ def seed():
         for nm, em, pos in [
             ("Sardor Aliyev", "sardor@maxway.uz", "Системный администратор"),
             ("Dilnoza Yusupova", "dilnoza@maxway.uz", "Специалист поддержки"),
-            ("Bek Toshev", "marsel@gmail.com", "Инженер")]:
+            ("Bek Toshev", "bek@maxway.uz", "Инженер")]:
             db.add(models.User(full_name=nm, email=em,
                 hashed_password=auth.hash_password("12345678"), role=Role.executor,
                 department_id=it.id, position=pos, specialization="ИТ",
                 schedule="5/2 09:00–18:00", experience="3 года", is_active=True))
         db.commit()
-        print("✅ Admin: a.ruzikulov@gmail.com / 12345678")
+        print("✅ Admin: asliddin@gmail.com / 12345678")
 
     if db.query(models.Branch).count() == 0:
         BRANCHES = [
@@ -69,7 +69,7 @@ def seed():
             print("✅ Filial klient login: eldor@maxway.uz / 12345678")
 
     if db.query(models.Request).count() == 0:
-        admin = db.query(models.User).filter(models.User.email == "a.ruzikulov@gmail.com").first()
+        admin = db.query(models.User).filter(models.User.email == "asliddin@gmail.com").first()
         branches = db.query(models.Branch).all()
         now = datetime.utcnow()
         data = [

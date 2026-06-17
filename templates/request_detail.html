@@ -9,6 +9,12 @@
     <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca" onclick="openModal('reject')">⊘ Отклонить</button>
     <button class="btn btn-blue" onclick="openModal('assign')">＋ Назначить исполнителя</button>
     {% endif %}
+    {% if user.role.value == 'admin' %}
+    <form method="post" action="/requests/{{ r.id }}/delete" style="display:inline"
+          onsubmit="return confirm('Заявкани butunlay o\'chirasizmi? Bu amalni qaytarib bo\'lmaydi.')">
+      <button type="submit" class="btn btn-light" style="color:#dc2626;border-color:#fecaca">🗑 Удалить</button>
+    </form>
+    {% endif %}
   </div>
 </div>
 
