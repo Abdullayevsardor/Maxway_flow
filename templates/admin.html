@@ -41,7 +41,7 @@
   <div class="panel-head">
     <div class="title">🏷 Категории (отделы) <span class="badge">{{ departments|length }} / 10</span></div>
     {% if departments|length < 10 %}
-    <button class="btn btn-blue" onclick="open_('cat')">＋ Добавить категорию</button>
+    <button class="btn btn-blue" onclick="open_('cat');suggestIcons()">＋ Добавить категорию</button>
     {% endif %}
   </div>
   <table>
@@ -156,10 +156,11 @@
   <div class="modal">
     <h3>Добавить категорию</h3>
     <form method="post" action="/admin/categories/create">
-      <div style="display:flex;gap:12px;align-items:flex-end">
-        <div class="field" style="flex:2"><label>Название</label><input type="text" name="name" required placeholder="Дизайн"></div>
-        <div class="field" style="width:80px"><label>Белги</label><input type="text" name="icon" value="🗂️" maxlength="4" style="text-align:center;font-size:18px"></div>
-        <div class="field" style="width:70px"><label>Цвет</label><input type="color" name="color" value="#2563eb" style="height:42px;padding:4px"></div>
+      <div class="field"><label>Название</label>
+        <input type="text" name="name" id="cat_name" required placeholder="Дизайн" oninput="suggestIcons()"></div>
+      <div class="field"><label>Иконка <span style="color:#94a3b8;font-weight:400">(выберите одну)</span></label>
+        <input type="hidden" name="icon" id="cat_icon" value="🗂️">
+        <div id="iconChoices" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       </div>
       <div class="field"><label>Подкатегории <span style="color:#94a3b8;font-weight:400">(каждая с новой строки, необязательно)</span></label>
         <textarea name="subcategories" rows="4" placeholder="Например:&#10;Логотип&#10;Баннер&#10;Визитка"></textarea></div>
@@ -177,9 +178,8 @@
     <h3>Изменить категорию</h3>
     <form method="post" id="catEditForm">
       <div style="display:flex;gap:12px;align-items:flex-end">
-        <div class="field" style="flex:2"><label>Название</label><input type="text" name="name" id="c_name" required></div>
-        <div class="field" style="width:80px"><label>Белги</label><input type="text" name="icon" id="c_icon" maxlength="4" style="text-align:center;font-size:18px"></div>
-        <div class="field" style="width:70px"><label>Цвет</label><input type="color" name="color" id="c_color" style="height:42px;padding:4px"></div>
+        <div class="field" style="flex:1"><label>Название</label><input type="text" name="name" id="c_name" required></div>
+        <div class="field" style="width:90px"><label>Иконка</label><input type="text" name="icon" id="c_icon" maxlength="4" style="text-align:center;font-size:18px"></div>
       </div>
       <div class="field"><label>Подкатегории <span style="color:#94a3b8;font-weight:400">(каждая с новой строки)</span></label>
         <textarea name="subcategories" id="c_subcats" rows="4"></textarea></div>
@@ -235,6 +235,68 @@
 <script>
   function open_(n){document.getElementById('modal-'+n).classList.add('open')}
   function close_(n){document.getElementById('modal-'+n).classList.remove('open')}
+
+  // ===== Kategoriya nomiga qarab ikon taklifi =====
+  const ICON_RULES = [
+    [["дизайн","график","лого","баннер"], "🎨"],
+    [["ит","комп","техник","программ","софт","сайт","веб"], "💻"],
+    [["ремонт","почин","сломал"], "🔧"],
+    [["электр","ток","провод","розетк"], "⚡"],
+    [["свет","лампоч","освещ"], "💡"],
+    [["сантех","вода","труб","кран","канализ"], "🚰"],
+    [["убор","чист","клин","мыть","мусор"], "🧹"],
+    [["мебель","стол","стул","шкаф"], "🪑"],
+    [["кухн","повар","еда","ресторан","кафе","пища"], "🍳"],
+    [["достав","курьер","посылк"], "🚚"],
+    [["охран","безопас","камер"], "🛡️"],
+    [["финанс","бухгалт","деньг","оплат","касса","счет"], "💰"],
+    [["маркетинг","реклам","смм"], "📣"],
+    [["кадр","персонал","сотрудник"], "👥"],
+    [["логист","склад","инвентар"], "📦"],
+    [["транспорт","авто","машин","водител"], "🚗"],
+    [["строит","стройк"], "🏗️"],
+    [["сад","газон","растен","озелен","двор"], "🌳"],
+    [["интернет","сеть","роутер","wifi"], "🌐"],
+    [["телефон","связ","звон"], "📞"],
+    [["принтер","печат","картридж"], "🖨️"],
+    [["кондицион","климат","вентил","холод"], "❄️"],
+    [["отоплен","тепло","батаре","котел"], "🔥"],
+    [["замок","ключ","двер"], "🚪"],
+    [["магазин","продаж","торг"], "🏪"],
+    [["медиц","здоров","врач","аптек"], "🏥"],
+    [["юрид","закон","договор","право"], "⚖️"],
+    [["обучен","курс","трен"], "🎓"],
+    [["событ","меропри","праздн"], "🎉"],
+    [["фото","видео"], "📷"],
+    [["докум","бумаг","отчет","файл"], "📄"],
+  ];
+  const DEFAULT_ICONS = ["🗂️","📁","📌","⚙️","🔧"];
+  function suggestIcons(){
+    const box = document.getElementById('iconChoices');
+    if(!box) return;
+    const name = (document.getElementById('cat_name').value||'').toLowerCase();
+    let picks = [];
+    for(const [kws, emo] of ICON_RULES){
+      if(kws.some(k=>name.includes(k)) && !picks.includes(emo)) picks.push(emo);
+      if(picks.length>=3) break;
+    }
+    for(const d of DEFAULT_ICONS){ if(picks.length>=3) break; if(!picks.includes(d)) picks.push(d); }
+    box.innerHTML='';
+    picks.forEach((emo,idx)=>{
+      const b=document.createElement('button');
+      b.type='button'; b.textContent=emo;
+      b.style.cssText='font-size:22px;width:50px;height:50px;border:2px solid var(--border);border-radius:10px;background:#fff;cursor:pointer';
+      b.onclick=()=>pickIcon(emo,b);
+      box.appendChild(b);
+      if(idx===0) pickIcon(emo,b);
+    });
+  }
+  function pickIcon(emo, el){
+    document.getElementById('cat_icon').value=emo;
+    [...document.getElementById('iconChoices').children].forEach(c=>{c.style.borderColor='var(--border)';c.style.background='#fff';});
+    if(el){el.style.borderColor='#2563eb';el.style.background='#eff6ff';}
+  }
+  suggestIcons();
   document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
 
   function editUser(d){
@@ -251,7 +313,6 @@
     document.getElementById('catEditForm').action='/admin/categories/'+d.id+'/edit';
     document.getElementById('c_name').value=d.name||'';
     document.getElementById('c_icon').value=d.icon||'';
-    document.getElementById('c_color').value=d.color||'#2563eb';
     document.getElementById('c_subcats').value=d.subcats||'';
     open_('catEdit');
   }
