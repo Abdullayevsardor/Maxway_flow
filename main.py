@@ -79,7 +79,7 @@ STATUS_LABELS = {
     "on_check": "На проверке", "done": "Выполнена", "rejected": "Отклонена",
 }
 PRIORITY_LABELS = {"low": "Низкий", "medium": "Средний", "high": "Высокий"}
-ROLE_LABELS = {"admin": "АДМИН", "manager": "МЕНЕДЖЕР", "executor": "ИСПОЛНИТЕЛЬ", "client": "КЛИЕНТ"}
+ROLE_LABELS = {"admin": "АДМИН", "manager": "МЕНЕДЖЕР", "executor": "ИСПОЛНИТЕЛЬ", "client": "ЗАКАЗЧИК"}
 
 templates.env.globals.update(
     STATUS_LABELS=STATUS_LABELS, PRIORITY_LABELS=PRIORITY_LABELS,
@@ -285,7 +285,7 @@ def request_detail(req_id: int, request: Request, db: Session = Depends(get_db))
         return RedirectResponse("/login", 302)
     r = db.get(models.Request, req_id)
     if not r:
-        raise HTTPException(404, "Заявка топилмади")
+        raise HTTPException(404, "Заявка не найдена")
     if user.role == Role.client and r.branch_id != user.user_branch_id:
         return RedirectResponse("/requests", 302)
     return templates.TemplateResponse(request, "request_detail.html", {
@@ -333,7 +333,7 @@ def create_request(request: Request, title: str = Form(...), description: str = 
                        customer_phone=cust_phone, branch=branch_name,
                        branch_id=branch_id, deadline=dl)
     db.add(r); db.flush()
-    add_history(db, r, Status.new, "Заявка яратилди")
+    add_history(db, r, Status.new, "Заявка создана")
 
     img_ext = (".jpg", ".jpeg", ".png", ".webp", ".gif")
     vid_ext = (".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v", ".3gp")
@@ -494,7 +494,7 @@ def change_status(req_id: int, request: Request, status: str = Form(...),
     r = db.get(models.Request, req_id)
     if r and status in STATUS_LABELS:
         r.status = Status(status)
-        add_history(db, r, Status(status), "Статус ўзгартирилди")
+        add_history(db, r, Status(status), "Статус изменён")
         db.commit()
     ref = request.headers.get("referer", f"/requests/{req_id}")
     return RedirectResponse(ref, 302)
@@ -812,7 +812,7 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
 def admin_user_create(request: Request, full_name: str = Form(...), email: str = Form(...),
                       password: str = Form("12345678"), role: str = Form("executor"),
                       department_id: Optional[int] = Form(None), phone: str = Form(""),
-                      db: Session = Depends(get_db)):
+                      telegram_chat_id: str = Form(""), db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
@@ -821,7 +821,8 @@ def admin_user_create(request: Request, full_name: str = Form(...), email: str =
         db.add(models.User(full_name=full_name.strip(), email=email,
                            hashed_password=auth.hash_password(password or "12345678"),
                            role=Role(role), department_id=department_id,
-                           phone=phone.strip(), is_active=True))
+                           phone=phone.strip(), telegram_chat_id=telegram_chat_id.strip(),
+                           is_active=True))
         db.commit()
     return RedirectResponse("/admin", 302)
 

@@ -29,7 +29,7 @@
           <span class="tag {{ r.priority.value }}">{{ PRIORITY_LABELS[r.priority.value] }}</span>
           {% if r.is_overdue %}<span class="tag overdue">⏱ Просрочена</span>{% endif %}
         </div>
-        <p style="color:#475569;border-top:1px solid var(--border);padding-top:16px">{{ r.description or "Тавсиф йўқ" }}</p>
+        <p style="color:#475569;border-top:1px solid var(--border);padding-top:16px">{{ r.description or "Нет описания" }}</p>
         {% set req_atts = r.attachments|selectattr('stage','equalto','request')|list %}
         {% set sol_atts = r.attachments|selectattr('stage','equalto','solution')|list %}
         {% if req_atts %}
@@ -115,13 +115,13 @@
           </div>
           {% if user.role.value in ['admin','manager'] or (c.user and c.user.id == user.id) %}
           <form method="post" action="/comments/{{ c.id }}/delete"
-                onsubmit="return confirm('Изоҳ ўчирилсинми?')" style="flex-shrink:0">
+                onsubmit="return confirm('Удалить комментарий?')" style="flex-shrink:0">
             <button type="submit" title="Удалить" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:15px;padding:4px">🗑</button>
           </form>
           {% endif %}
         </div>
         {% else %}
-        <p style="color:#94a3b8">Изоҳлар йўқ</p>
+        <p style="color:#94a3b8">Комментариев нет</p>
         {% endfor %}
         <form method="post" action="/requests/{{ r.id }}/comment" style="margin-top:16px">
           <textarea name="text" class="inp" style="width:100%;min-height:70px;padding:12px" placeholder="Напишите комментарий..." required></textarea>
@@ -172,7 +172,7 @@
             <span class="tl-dot {{ h.status.value }}"></span>
             <div><b>{{ STATUS_LABELS[h.status.value] }}</b><div style="color:#94a3b8;font-size:12px">{{ h.created_at.strftime('%d.%m.%Y %H:%M') }}</div></div>
           </div>
-          {% else %}<p style="color:#94a3b8">Тарих йўқ</p>{% endfor %}
+          {% else %}<p style="color:#94a3b8">Истории нет</p>{% endfor %}
         </div>
       </div>
     </div>

@@ -25,7 +25,7 @@
             onclick='editUser({{ {"id":u.id,"full_name":u.full_name,"email":u.email,"role":u.role.value,"department_id":u.department_id or "","phone":u.phone or "","telegram_chat_id":u.telegram_chat_id or ""}|tojson }})'>✏ Изменить</button>
           {% if u.id != user.id %}
           <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline"
-                onsubmit="return confirm('«{{ u.full_name }}» ўчирилсинми?')">
+                onsubmit="return confirm('Удалить «{{ u.full_name }}»?')">
             <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
           </form>
           {% endif %}
@@ -58,7 +58,7 @@
           <button class="btn btn-light" style="padding:7px 12px"
             onclick='editCat({{ {"id":d.id,"name":d.name,"icon":d.icon,"color":d.color,"subcats":d.subcategories|map(attribute="name")|join("\n")}|tojson }})'>✏ Изменить</button>
           <form method="post" action="/admin/categories/{{ d.id }}/delete" style="display:inline"
-                onsubmit="return confirm('«{{ d.name }}» ва унга тегишли заявкалар ўчирилади. Давом этасизми?')">
+                onsubmit="return confirm('«{{ d.name }}» и связанные заявки будут удалены. Продолжить?')">
             <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
           </form>
         </td>
@@ -85,7 +85,7 @@
           <button class="btn btn-light" style="padding:7px 12px"
             onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or "","phone":b.phone or ""}|tojson }})'>✏ Изменить</button>
           <form method="post" action="/admin/branches/{{ b.id }}/delete" style="display:inline"
-                onsubmit="return confirm('«{{ b.name }}» филиали ўчирилсинми?')">
+                onsubmit="return confirm('Удалить филиал «{{ b.name }}»?')">
             <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
           </form>
         </td>
@@ -108,13 +108,15 @@
       </div>
       <div style="display:flex;gap:12px">
         <div class="field" style="flex:1"><label>Роль</label>
-          <select name="role"><option value="executor">Исполнитель</option><option value="admin">Админ</option><option value="client">Клиент</option></select></div>
+          <select name="role"><option value="executor">Исполнитель</option><option value="admin">Админ</option><option value="client">Заказчик</option></select></div>
         <div class="field" style="flex:1"><label>Категория</label>
           <select name="department_id"><option value="">— нет —</option>
             {% for d in departments %}<option value="{{ d.id }}">{{ d.icon }} {{ d.name }}</option>{% endfor %}
           </select></div>
       </div>
       <div class="field"><label>Телефон</label><input type="text" name="phone" value="+998 "></div>
+      <div class="field"><label>Telegram chat ID <span style="color:#94a3b8;font-weight:400">(для уведомлений бота)</span></label>
+        <input type="text" name="telegram_chat_id" placeholder="напр. 123456789"></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-light" onclick="close_('user')">Отмена</button>
         <button type="submit" class="btn btn-blue">Добавить</button>
@@ -133,7 +135,7 @@
       <div style="display:flex;gap:12px">
         <div class="field" style="flex:1"><label>Телефон</label><input type="text" name="phone" id="u_phone"></div>
         <div class="field" style="flex:1"><label>Роль</label>
-          <select name="role" id="u_role"><option value="executor">Исполнитель</option><option value="admin">Админ</option><option value="client">Клиент</option></select></div>
+          <select name="role" id="u_role"><option value="executor">Исполнитель</option><option value="admin">Админ</option><option value="client">Заказчик</option></select></div>
       </div>
       <div class="field"><label>Telegram chat ID (для уведомлений бота)</label>
         <input type="text" name="telegram_chat_id" id="u_telegram_chat_id" placeholder="напр. 123456789"></div>
@@ -197,7 +199,7 @@
       <div class="field"><label>Название / код</label><input type="text" name="name" required placeholder="MW06-NEXT"></div>
       <div class="field"><label>Локация (полный адрес)</label>
         <textarea name="location" placeholder="Ракатбаши махалля, Яккасарайский район, Ташкент, 100000, Узбекистан"></textarea></div>
-      <div class="field"><label>Телефон</label><input type="text" name="phone" placeholder="+998 90 123 45 67"></div>
+      <div class="field"><label>Телефон</label><input type="text" name="phone" value="+998 "></div>
       <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px">
         <p style="font-weight:500;color:#475569;margin-bottom:10px;font-size:13px">🔑 Доступ для филиала (необязательно) — филиал видит только свои заявки</p>
         <div style="display:flex;gap:12px">
@@ -257,7 +259,7 @@
     document.getElementById('branchEditForm').action='/admin/branches/'+d.id+'/edit';
     document.getElementById('b_name').value=d.name||'';
     document.getElementById('b_location').value=d.location||'';
-    document.getElementById('b_phone').value=d.phone||'';
+    document.getElementById('b_phone').value=d.phone||'+998 ';
     open_('branchEdit');
   }
 </script>
