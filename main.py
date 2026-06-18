@@ -25,7 +25,9 @@ print(">>> [MAXWAY] create_all tugadi", flush=True)
 def _ensure_columns():
     """Eski bazaga yetishmagan ustunlarни qo'shadi (SQLite + Postgres mos)."""
     from sqlalchemy import inspect as sa_inspect
-    checks = [("attachments", "stage", "VARCHAR(10) DEFAULT 'request'")]
+    checks = [("attachments", "stage", "VARCHAR(10) DEFAULT 'request'"),
+              ("requests", "subcategory_id", "INTEGER"),
+              ("branches", "phone", "VARCHAR(40) DEFAULT ''")]
     try:
         insp = sa_inspect(engine)
         tables = insp.get_table_names()
@@ -262,12 +264,17 @@ def requests_page(request: Request, department_id: Optional[int] = None,
                               models.Request.status.notin_([Status.done, Status.rejected])).count(),
     }
     selected_dep = db.get(models.Department, department_id) if department_id else None
+    subcats = db.query(models.Subcategory).order_by(models.Subcategory.name).all()
+    subcats_map = {}
+    for s in subcats:
+        subcats_map.setdefault(s.department_id, []).append({"id": s.id, "name": s.name})
     return templates.TemplateResponse(request, "requests.html", {
         "request": request, "user": user, "active": "requests",
         "items": items, "departments": db.query(models.Department).all(),
         "executors": db.query(models.User).all(), "selected_dep": selected_dep,
         "selected_status": status, "counts": counts, "search": q or "",
         "branches": db.query(models.Branch).order_by(models.Branch.name).all(),
+        "subcats_map": subcats_map,
     })
 
 
@@ -289,7 +296,8 @@ def request_detail(req_id: int, request: Request, db: Session = Depends(get_db))
 
 @app.post("/requests/create")
 def create_request(request: Request, title: str = Form(...), description: str = Form(""),
-                   department_id: int = Form(...), priority: str = Form("medium"),
+                   department_id: int = Form(...), subcategory_id: Optional[int] = Form(None),
+                   priority: str = Form("medium"),
                    customer_name: str = Form(""), customer_email: str = Form(""),
                    customer_phone: str = Form(""), branch_id: Optional[int] = Form(None),
                    deadline: str = Form(""), photos: List[UploadFile] = File([]),
@@ -304,17 +312,25 @@ def create_request(request: Request, title: str = Form(...), description: str = 
         except ValueError:
             dl = None
     branch_name = ""
+    branch_phone = ""
     if user.role == Role.client and user.user_branch_id:
         branch_id = user.user_branch_id
     if branch_id:
         b = db.get(models.Branch, branch_id)
-        branch_name = b.name if b else ""
-    cust_email = customer_email.strip() or user.email   # bo'sh bo'lsa login email
+        if b:
+            branch_name = b.name
+            branch_phone = b.phone or ""
+    # forma endi buyurtmachi maydonlarini so'ramaydi — avtomatik to'ldiramiz
+    cust_name = customer_name.strip() or branch_name or user.full_name
+    cust_phone = customer_phone.strip() or branch_phone or (user.phone or "")
+    cust_email = customer_email.strip() or user.email
     r = models.Request(title=title.strip(), description=description.strip(),
-                       department_id=department_id, priority=Priority(priority),
+                       department_id=department_id,
+                       subcategory_id=subcategory_id or None,
+                       priority=Priority(priority),
                        status=Status.new, created_by=user.id,
-                       customer_name=customer_name.strip(), customer_email=cust_email,
-                       customer_phone=customer_phone.strip(), branch=branch_name,
+                       customer_name=cust_name, customer_email=cust_email,
+                       customer_phone=cust_phone, branch=branch_name,
                        branch_id=branch_id, deadline=dl)
     db.add(r); db.flush()
     add_history(db, r, Status.new, "Заявка яратилди")
@@ -853,12 +869,18 @@ def admin_user_edit(uid: int, request: Request, full_name: str = Form(...),
 
 @app.post("/admin/categories/create")
 def admin_cat_create(request: Request, name: str = Form(...), icon: str = Form("🗂️"),
-                     color: str = Form("#2563eb"), db: Session = Depends(get_db)):
+                     color: str = Form("#2563eb"), subcategories: str = Form(""),
+                     db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
     if db.query(models.Department).count() < 10:
-        db.add(models.Department(name=name.strip(), icon=(icon.strip() or "🗂️"), color=color))
+        d = models.Department(name=name.strip(), icon=(icon.strip() or "🗂️"), color=color)
+        db.add(d); db.flush()
+        for line in subcategories.splitlines():
+            nm = line.strip()
+            if nm:
+                db.add(models.Subcategory(name=nm, department_id=d.id))
         db.commit()
     return RedirectResponse("/admin", 302)
 
@@ -880,7 +902,7 @@ def admin_cat_delete(dep_id: int, request: Request, db: Session = Depends(get_db
 @app.post("/admin/categories/{dep_id}/edit")
 def admin_cat_edit(dep_id: int, request: Request, name: str = Form(...),
                    icon: str = Form("🗂️"), color: str = Form("#2563eb"),
-                   db: Session = Depends(get_db)):
+                   subcategories: str = Form(""), db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
@@ -889,18 +911,31 @@ def admin_cat_edit(dep_id: int, request: Request, name: str = Form(...),
         d.name = name.strip()
         d.icon = icon.strip() or "🗂️"
         d.color = color
+        # podkategoriyalarni qayta yozamiz (avval заявкалардаги ishorani bo'shatamiz)
+        old_ids = [s.id for s in db.query(models.Subcategory).filter(
+            models.Subcategory.department_id == dep_id).all()]
+        if old_ids:
+            db.query(models.Request).filter(
+                models.Request.subcategory_id.in_(old_ids)).update(
+                {models.Request.subcategory_id: None}, synchronize_session=False)
+        db.query(models.Subcategory).filter(
+            models.Subcategory.department_id == dep_id).delete()
+        for line in subcategories.splitlines():
+            nm = line.strip()
+            if nm:
+                db.add(models.Subcategory(name=nm, department_id=dep_id))
         db.commit()
     return RedirectResponse("/admin", 302)
 
 
 @app.post("/admin/branches/create")
 def admin_branch_create(request: Request, name: str = Form(...), location: str = Form(""),
-                        login_email: str = Form(""), password: str = Form(""),
-                        db: Session = Depends(get_db)):
+                        phone: str = Form(""), login_email: str = Form(""),
+                        password: str = Form(""), db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
-    b = models.Branch(name=name.strip(), location=location.strip())
+    b = models.Branch(name=name.strip(), location=location.strip(), phone=phone.strip())
     db.add(b); db.flush()
     # filial uchun login (klient) yaratish
     login_email = login_email.lower().strip()
@@ -927,7 +962,8 @@ def admin_branch_delete(bid: int, request: Request, db: Session = Depends(get_db
 
 @app.post("/admin/branches/{bid}/edit")
 def admin_branch_edit(bid: int, request: Request, name: str = Form(...),
-                      location: str = Form(""), db: Session = Depends(get_db)):
+                      location: str = Form(""), phone: str = Form(""),
+                      db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
@@ -935,6 +971,7 @@ def admin_branch_edit(bid: int, request: Request, name: str = Form(...),
     if b:
         b.name = name.strip()
         b.location = location.strip()
+        b.phone = phone.strip()
         db.commit()
     return RedirectResponse("/admin", 302)
 

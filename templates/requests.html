@@ -65,20 +65,17 @@
   <div class="modal" style="max-width:600px">
     <h3>Новая заявка</h3>
     <form method="post" action="/requests/create" enctype="multipart/form-data">
-      <div class="field"><label>Название</label><input type="text" name="title" required></div>
-      <div class="field"><label>Описание</label><textarea name="description"></textarea></div>
       <div style="display:flex;gap:12px">
         <div class="field" style="flex:1"><label>Категория</label>
-          <select name="department_id" required>
+          <select name="department_id" id="catSelect" required onchange="updateSubcats()">
             {% for d in departments %}<option value="{{ d.id }}" {{ 'selected' if selected_dep and selected_dep.id==d.id }}>{{ d.icon }} {{ d.name }}</option>{% endfor %}
           </select></div>
         <div class="field" style="flex:1"><label>Приоритет</label>
           <select name="priority"><option value="low">Низкий</option><option value="medium" selected>Средний</option><option value="high">Высокий</option></select></div>
       </div>
-      <div style="display:flex;gap:12px">
-        <div class="field" style="flex:1"><label>Имя заказчика *</label><input type="text" name="customer_name" required></div>
-        <div class="field" style="flex:1"><label>Телефон *</label><input type="text" name="customer_phone" value="+998 " required></div>
-      </div>
+      <div class="field" id="subcatField"><label>Подкатегория</label>
+        <select name="subcategory_id" id="subcatSelect"><option value="">— нет —</option></select></div>
+      <div class="field"><label>Название</label><input type="text" name="title" required></div>
       {% if user.role.value != 'client' %}
       <div class="field"><label>Филиал (локация) *</label>
         <select name="branch_id" required>
@@ -119,12 +116,22 @@
 {% endblock %}
 {% block scripts %}
 <script>
-  function openModal(){document.getElementById('modal').classList.add('open')}
+  const SUBCATS = {{ subcats_map|tojson }};
+  function updateSubcats(){
+    const cat = document.getElementById('catSelect').value;
+    const sel = document.getElementById('subcatSelect');
+    const list = SUBCATS[cat] || [];
+    sel.innerHTML = '<option value="">— нет —</option>';
+    list.forEach(s=>{ const o=document.createElement('option'); o.value=s.id; o.textContent=s.name; sel.appendChild(o); });
+    document.getElementById('subcatField').style.display = list.length ? '' : 'none';
+  }
+  function openModal(){document.getElementById('modal').classList.add('open'); updateSubcats();}
   function closeModal(){document.getElementById('modal').classList.remove('open')}
   document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
   function showCnt(inp,id){
     const n=inp.files.length;
     document.getElementById(id).textContent = n ? ('✓ Выбрано: '+n) : '';
   }
+  updateSubcats();
 </script>
 {% endblock %}

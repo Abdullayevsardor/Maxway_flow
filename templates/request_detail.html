@@ -71,6 +71,7 @@
           <div><span>👤 Исполнитель</span><b>{{ r.assignee.full_name if r.assignee else "—" }}</b></div>
           <div><span>⏰ Дедлайн</span><b style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y') if r.deadline else "—" }}</b></div>
           <div><span>🏷 Категория</span><b>{{ r.department.icon }} {{ r.department.name }}</b></div>
+          {% if r.subcategory %}<div><span>📂 Подкатегория</span><b>{{ r.subcategory.name }}</b></div>{% endif %}
           <div><span>🔄 Обновлена</span><b>{{ r.updated_at.strftime('%d.%m.%Y %H:%M') }}</b></div>
         </div>
         <!-- status o'zgartirish -->

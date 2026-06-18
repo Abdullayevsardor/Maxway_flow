@@ -50,11 +50,13 @@
       {% for d in departments %}
       <tr>
         <td data-label="Белги"><span class="cat-ico" style="display:inline-grid;width:34px;height:34px;color:{{ d.color }}">{{ d.icon }}</span></td>
-        <td data-label="Название"><b>{{ d.name }}</b></td>
+        <td data-label="Название"><b>{{ d.name }}</b>
+          {% if d.subcategories %}<div style="font-size:12px;color:#94a3b8;margin-top:3px">{{ d.subcategories|map(attribute='name')|join(' · ') }}</div>{% endif %}
+        </td>
         <td data-label="Заявок">{{ d.requests|length }}</td>
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
-            onclick='editCat({{ {"id":d.id,"name":d.name,"icon":d.icon,"color":d.color}|tojson }})'>✏ Изменить</button>
+            onclick='editCat({{ {"id":d.id,"name":d.name,"icon":d.icon,"color":d.color,"subcats":d.subcategories|map(attribute="name")|join("\n")}|tojson }})'>✏ Изменить</button>
           <form method="post" action="/admin/categories/{{ d.id }}/delete" style="display:inline"
                 onsubmit="return confirm('«{{ d.name }}» ва унга тегишли заявкалар ўчирилади. Давом этасизми?')">
             <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
@@ -81,7 +83,7 @@
         <td data-label="Локация" style="color:#475569">📍 {{ b.location or "—" }}</td>
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
-            onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or ""}|tojson }})'>✏ Изменить</button>
+            onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or "","phone":b.phone or ""}|tojson }})'>✏ Изменить</button>
           <form method="post" action="/admin/branches/{{ b.id }}/delete" style="display:inline"
                 onsubmit="return confirm('«{{ b.name }}» филиали ўчирилсинми?')">
             <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
@@ -157,6 +159,8 @@
         <div class="field" style="width:80px"><label>Белги</label><input type="text" name="icon" value="🗂️" maxlength="4" style="text-align:center;font-size:18px"></div>
         <div class="field" style="width:70px"><label>Цвет</label><input type="color" name="color" value="#2563eb" style="height:42px;padding:4px"></div>
       </div>
+      <div class="field"><label>Подкатегории <span style="color:#94a3b8;font-weight:400">(каждая с новой строки, необязательно)</span></label>
+        <textarea name="subcategories" rows="4" placeholder="Например:&#10;Логотип&#10;Баннер&#10;Визитка"></textarea></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-light" onclick="close_('cat')">Отмена</button>
         <button type="submit" class="btn btn-blue">Добавить</button>
@@ -175,6 +179,8 @@
         <div class="field" style="width:80px"><label>Белги</label><input type="text" name="icon" id="c_icon" maxlength="4" style="text-align:center;font-size:18px"></div>
         <div class="field" style="width:70px"><label>Цвет</label><input type="color" name="color" id="c_color" style="height:42px;padding:4px"></div>
       </div>
+      <div class="field"><label>Подкатегории <span style="color:#94a3b8;font-weight:400">(каждая с новой строки)</span></label>
+        <textarea name="subcategories" id="c_subcats" rows="4"></textarea></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-light" onclick="close_('catEdit')">Отмена</button>
         <button type="submit" class="btn btn-blue">Сохранить</button>
@@ -191,6 +197,7 @@
       <div class="field"><label>Название / код</label><input type="text" name="name" required placeholder="MW06-NEXT"></div>
       <div class="field"><label>Локация (полный адрес)</label>
         <textarea name="location" placeholder="Ракатбаши махалля, Яккасарайский район, Ташкент, 100000, Узбекистан"></textarea></div>
+      <div class="field"><label>Телефон</label><input type="text" name="phone" placeholder="+998 90 123 45 67"></div>
       <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px">
         <p style="font-weight:500;color:#475569;margin-bottom:10px;font-size:13px">🔑 Доступ для филиала (необязательно) — филиал видит только свои заявки</p>
         <div style="display:flex;gap:12px">
@@ -213,6 +220,7 @@
     <form method="post" id="branchEditForm">
       <div class="field"><label>Название / код</label><input type="text" name="name" id="b_name" required></div>
       <div class="field"><label>Локация (полный адрес)</label><textarea name="location" id="b_location"></textarea></div>
+      <div class="field"><label>Телефон</label><input type="text" name="phone" id="b_phone" placeholder="+998 90 123 45 67"></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-light" onclick="close_('branchEdit')">Отмена</button>
         <button type="submit" class="btn btn-blue">Сохранить</button>
@@ -242,12 +250,14 @@
     document.getElementById('c_name').value=d.name||'';
     document.getElementById('c_icon').value=d.icon||'';
     document.getElementById('c_color').value=d.color||'#2563eb';
+    document.getElementById('c_subcats').value=d.subcats||'';
     open_('catEdit');
   }
   function editBranch(d){
     document.getElementById('branchEditForm').action='/admin/branches/'+d.id+'/edit';
     document.getElementById('b_name').value=d.name||'';
     document.getElementById('b_location').value=d.location||'';
+    document.getElementById('b_phone').value=d.phone||'';
     open_('branchEdit');
   }
 </script>

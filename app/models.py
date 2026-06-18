@@ -49,6 +49,20 @@ class Department(Base):
 
     users = relationship("User", back_populates="department")
     requests = relationship("Request", back_populates="department")
+    subcategories = relationship("Subcategory", back_populates="department",
+                                 cascade="all, delete-orphan",
+                                 order_by="Subcategory.name")
+
+
+class Subcategory(Base):
+    """Podkategoriya — biror kategoriyaga tegishli bo'lim."""
+    __tablename__ = "subcategories"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
+    created_at = Column(DateTime, default=tashkent_now)
+
+    department = relationship("Department", back_populates="subcategories")
 
 
 class User(Base):
@@ -90,6 +104,7 @@ class Request(Base):
     priority = Column(SAEnum(Priority), default=Priority.medium)
 
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
+    subcategory_id = Column(Integer, ForeignKey("subcategories.id"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
 
@@ -107,6 +122,7 @@ class Request(Base):
     updated_at = Column(DateTime, default=tashkent_now, onupdate=tashkent_now)
 
     department = relationship("Department", back_populates="requests")
+    subcategory = relationship("Subcategory")
     creator = relationship("User", back_populates="created_requests",
                            foreign_keys=[created_by])
     assignee = relationship("User", back_populates="assigned_requests",
@@ -157,6 +173,7 @@ class Branch(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(120), nullable=False)       # masalan: MW06-NEXT
     location = Column(Text, default="")              # to'liq manzil / lokatsiya
+    phone = Column(String(40), default="")           # filial telefon raqami
     created_at = Column(DateTime, default=tashkent_now)
 
 
