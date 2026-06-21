@@ -19,7 +19,7 @@
         <td data-label="Имя"><b>{{ u.full_name }}</b></td>
         <td data-label="Email">{{ u.email }}</td>
         <td data-label="Роль"><span class="tag {{ 'high' if u.role.value=='admin' else ('new' if u.role.value=='executor' else 'on_check') }}">{{ ROLE_LABELS.get(u.role.value) }}</span></td>
-        <td data-label="Категория">{% if u.department %}{{ u.department.icon }} {{ u.department.name }}{% else %}—{% endif %}</td>
+        <td data-label="Категория">{% if u.department %}{{ u.department.name }}{% else %}—{% endif %}</td>
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
             onclick='editUser({{ {"id":u.id,"full_name":u.full_name,"email":u.email,"role":u.role.value,"department_id":u.department_id or "","phone":u.phone or "","telegram_chat_id":u.telegram_chat_id or ""}|tojson }})'>✏ Изменить</button>
@@ -45,18 +45,17 @@
     {% endif %}
   </div>
   <table>
-    <thead><tr><th>Белги</th><th>Название</th><th>Заявок</th><th></th></tr></thead>
+    <thead><tr><th>Название</th><th>Заявок</th><th></th></tr></thead>
     <tbody>
       {% for d in departments %}
       <tr>
-        <td data-label="Белги"><span class="cat-ico" style="display:inline-grid;width:34px;height:34px;color:{{ d.color }}">{{ d.icon }}</span></td>
         <td data-label="Название"><b>{{ d.name }}</b>
           {% if d.subcategories %}<div style="font-size:12px;color:#94a3b8;margin-top:3px">{{ d.subcategories|map(attribute='name')|join(' · ') }}</div>{% endif %}
         </td>
         <td data-label="Заявок">{{ d.requests|length }}</td>
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
-            onclick='editCat({{ {"id":d.id,"name":d.name,"icon":d.icon,"color":d.color,"subcats":d.subcategories|map(attribute="name")|join("\n")}|tojson }})'>✏ Изменить</button>
+            onclick='editCat({{ {"id":d.id,"name":d.name,"subcats":d.subcategories|map(attribute="name")|join("\n")}|tojson }})'>✏ Изменить</button>
           <form method="post" action="/admin/categories/{{ d.id }}/delete" style="display:inline"
                 onsubmit="return confirm('«{{ d.name }}» и связанные заявки будут удалены. Продолжить?')">
             <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
@@ -83,7 +82,7 @@
         <td data-label="Локация" style="color:#475569">📍 {{ b.location or "—" }}</td>
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
-            onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or "","phone":b.phone or ""}|tojson }})'>✏ Изменить</button>
+            onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or "","phone":b.phone or "","director_name":b.director_name or ""}|tojson }})'>✏ Изменить</button>
           <form method="post" action="/admin/branches/{{ b.id }}/delete" style="display:inline"
                 onsubmit="return confirm('Удалить филиал «{{ b.name }}»?')">
             <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
@@ -111,7 +110,7 @@
           <select name="role"><option value="executor">Исполнитель</option><option value="admin">Админ</option><option value="client">Заказчик</option></select></div>
         <div class="field" style="flex:1"><label>Категория</label>
           <select name="department_id"><option value="">— нет —</option>
-            {% for d in departments %}<option value="{{ d.id }}">{{ d.icon }} {{ d.name }}</option>{% endfor %}
+            {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
           </select></div>
       </div>
       <div class="field"><label>Телефон</label><input type="text" name="phone" value="+998 "></div>
@@ -141,8 +140,10 @@
         <input type="text" name="telegram_chat_id" id="u_telegram_chat_id" placeholder="напр. 123456789"></div>
       <div class="field"><label>Категория</label>
         <select name="department_id" id="u_department_id"><option value="">— нет —</option>
-          {% for d in departments %}<option value="{{ d.id }}">{{ d.icon }} {{ d.name }}</option>{% endfor %}
+          {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
         </select></div>
+      <div class="field"><label>Новый пароль <span style="color:#94a3b8;font-weight:400">(оставьте пустым, чтобы не менять)</span></label>
+        <input type="text" name="password" id="u_password" placeholder="••••••••" autocomplete="new-password"></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-light" onclick="close_('userEdit')">Отмена</button>
         <button type="submit" class="btn btn-blue">Сохранить</button>
@@ -190,6 +191,8 @@
     <h3>Добавить филиал</h3>
     <form method="post" action="/admin/branches/create">
       <div class="field"><label>Название / код</label><input type="text" name="name" required placeholder="MW06-NEXT"></div>
+      <div class="field"><label>Имя директора <span style="color:#94a3b8;font-weight:400">(будет указан как заказчик)</span></label>
+        <input type="text" name="director_name" placeholder="Напр. Алишер Каримов"></div>
       <div class="field"><label>Локация (полный адрес)</label>
         <textarea name="location" placeholder="Ракатбаши махалля, Яккасарайский район, Ташкент, 100000, Узбекистан"></textarea></div>
       <div class="field"><label>Телефон</label><input type="text" name="phone" value="+998 "></div>
@@ -214,6 +217,8 @@
     <h3>Изменить филиал</h3>
     <form method="post" id="branchEditForm">
       <div class="field"><label>Название / код</label><input type="text" name="name" id="b_name" required></div>
+      <div class="field"><label>Имя директора <span style="color:#94a3b8;font-weight:400">(заказчик)</span></label>
+        <input type="text" name="director_name" id="b_director"></div>
       <div class="field"><label>Локация (полный адрес)</label><textarea name="location" id="b_location"></textarea></div>
       <div class="field"><label>Телефон</label><input type="text" name="phone" id="b_phone" placeholder="+998 90 123 45 67"></div>
       <div class="modal-actions">
@@ -238,6 +243,7 @@
     document.getElementById('u_role').value=d.role||'executor';
     document.getElementById('u_department_id').value=d.department_id||'';
     document.getElementById('u_telegram_chat_id').value=d.telegram_chat_id||'';
+    document.getElementById('u_password').value='';
     open_('userEdit');
   }
   function editCat(d){
@@ -249,6 +255,7 @@
   function editBranch(d){
     document.getElementById('branchEditForm').action='/admin/branches/'+d.id+'/edit';
     document.getElementById('b_name').value=d.name||'';
+    document.getElementById('b_director').value=d.director_name||'';
     document.getElementById('b_location').value=d.location||'';
     document.getElementById('b_phone').value=d.phone||'+998 ';
     open_('branchEdit');

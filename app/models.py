@@ -174,6 +174,7 @@ class Branch(Base):
     name = Column(String(120), nullable=False)       # masalan: MW06-NEXT
     location = Column(Text, default="")              # to'liq manzil / lokatsiya
     phone = Column(String(40), default="")           # filial telefon raqami
+    director_name = Column(String(120), default="")  # filial direktori (buyurtmachi)
     created_at = Column(DateTime, default=tashkent_now)
 
 

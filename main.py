@@ -27,7 +27,8 @@ def _ensure_columns():
     from sqlalchemy import inspect as sa_inspect
     checks = [("attachments", "stage", "VARCHAR(10) DEFAULT 'request'"),
               ("requests", "subcategory_id", "INTEGER"),
-              ("branches", "phone", "VARCHAR(40) DEFAULT ''")]
+              ("branches", "phone", "VARCHAR(40) DEFAULT ''"),
+              ("branches", "director_name", "VARCHAR(120) DEFAULT ''")]
     try:
         insp = sa_inspect(engine)
         tables = insp.get_table_names()
@@ -313,6 +314,7 @@ def create_request(request: Request, title: str = Form(...), description: str = 
             dl = None
     branch_name = ""
     branch_phone = ""
+    branch_director = ""
     if user.role == Role.client and user.user_branch_id:
         branch_id = user.user_branch_id
     if branch_id:
@@ -320,8 +322,10 @@ def create_request(request: Request, title: str = Form(...), description: str = 
         if b:
             branch_name = b.name
             branch_phone = b.phone or ""
+            branch_director = b.director_name or ""
     # forma endi buyurtmachi maydonlarini so'ramaydi — avtomatik to'ldiramiz
-    cust_name = customer_name.strip() or branch_name or user.full_name
+    # Заказчик = filial direktori (bo'lmasa filial nomi yoki foydalanuvchi)
+    cust_name = customer_name.strip() or branch_director or branch_name or user.full_name
     cust_phone = customer_phone.strip() or branch_phone or (user.phone or "")
     cust_email = customer_email.strip() or user.email
     r = models.Request(title=title.strip(), description=description.strip(),
@@ -846,7 +850,7 @@ def admin_user_edit(uid: int, request: Request, full_name: str = Form(...),
                     email: str = Form(""), role: str = Form("executor"),
                     department_id: Optional[int] = Form(None),
                     phone: str = Form(""), telegram_chat_id: str = Form(""),
-                    db: Session = Depends(get_db)):
+                    password: str = Form(""), db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
@@ -864,6 +868,9 @@ def admin_user_edit(uid: int, request: Request, full_name: str = Form(...),
         p.department_id = department_id
         p.phone = phone.strip()
         p.telegram_chat_id = telegram_chat_id.strip()
+        # parol — faqat kiritilgan bo'lsa o'zgartiramiz
+        if password.strip():
+            p.hashed_password = auth.hash_password(password.strip())
         db.commit()
     return RedirectResponse("/admin", 302)
 
@@ -931,12 +938,14 @@ def admin_cat_edit(dep_id: int, request: Request, name: str = Form(...),
 
 @app.post("/admin/branches/create")
 def admin_branch_create(request: Request, name: str = Form(...), location: str = Form(""),
-                        phone: str = Form(""), login_email: str = Form(""),
-                        password: str = Form(""), db: Session = Depends(get_db)):
+                        phone: str = Form(""), director_name: str = Form(""),
+                        login_email: str = Form(""), password: str = Form(""),
+                        db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
-    b = models.Branch(name=name.strip(), location=location.strip(), phone=phone.strip())
+    b = models.Branch(name=name.strip(), location=location.strip(),
+                      phone=phone.strip(), director_name=director_name.strip())
     db.add(b); db.flush()
     # filial uchun login (klient) yaratish
     login_email = login_email.lower().strip()
@@ -964,7 +973,7 @@ def admin_branch_delete(bid: int, request: Request, db: Session = Depends(get_db
 @app.post("/admin/branches/{bid}/edit")
 def admin_branch_edit(bid: int, request: Request, name: str = Form(...),
                       location: str = Form(""), phone: str = Form(""),
-                      db: Session = Depends(get_db)):
+                      director_name: str = Form(""), db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
@@ -973,6 +982,7 @@ def admin_branch_edit(bid: int, request: Request, name: str = Form(...),
         b.name = name.strip()
         b.location = location.strip()
         b.phone = phone.strip()
+        b.director_name = director_name.strip()
         db.commit()
     return RedirectResponse("/admin", 302)
 
