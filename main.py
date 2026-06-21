@@ -790,8 +790,9 @@ def departments_delete(dep_id: int, request: Request, db: Session = Depends(get_
     d = db.get(models.Department, dep_id)
     if d:
         db.query(models.User).filter(models.User.department_id == dep_id)\
-            .update({models.User.department_id: None})
-        db.query(models.Request).filter(models.Request.department_id == dep_id).delete()
+            .update({models.User.department_id: None}, synchronize_session=False)
+        for r in db.query(models.Request).filter(models.Request.department_id == dep_id).all():
+            db.delete(r)
         db.delete(d); db.commit()
     return RedirectResponse("/departments", 302)
 
@@ -804,11 +805,15 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse("/login", 302)
     if user.role != Role.admin:
         return RedirectResponse("/dashboard", 302)
+    from sqlalchemy import func as _func
+    req_counts = dict(db.query(models.Request.created_by, _func.count(models.Request.id))
+                      .group_by(models.Request.created_by).all())
     return templates.TemplateResponse(request, "admin.html", {
         "request": request, "user": user, "active": "admin",
         "users": db.query(models.User).order_by(models.User.full_name).all(),
         "departments": db.query(models.Department).all(),
         "branches": db.query(models.Branch).order_by(models.Branch.name).all(),
+        "req_counts": req_counts,
     })
 
 
@@ -838,10 +843,27 @@ def admin_user_delete(uid: int, request: Request, db: Session = Depends(get_db))
         return RedirectResponse("/login", 302)
     p = db.get(models.User, uid)
     if p and p.id != user.id:
+        # bu odam ijrochi bo'lgan заявкаларни bo'shatamiz
         db.query(models.Request).filter(models.Request.assigned_to == uid)\
-            .update({models.Request.assigned_to: None})
-        db.query(models.Request).filter(models.Request.created_by == uid).delete()
-        db.delete(p); db.commit()
+            .update({models.Request.assigned_to: None}, synchronize_session=False)
+        # bu odam yaratgan заявкаларni birma-bir o'chiramiz (cascade: izoh/tarix/fayl)
+        reqs = db.query(models.Request).filter(models.Request.created_by == uid).all()
+        for r in reqs:
+            for att in r.attachments:
+                try:
+                    fp = att.file_path.lstrip("/")
+                    if os.path.exists(fp):
+                        os.remove(fp)
+                except Exception:
+                    pass
+            db.delete(r)
+        # bu odamning izohlari va bildirishnomalarini o'chiramiz
+        db.query(models.Comment).filter(models.Comment.user_id == uid)\
+            .delete(synchronize_session=False)
+        db.query(models.Notification).filter(models.Notification.user_id == uid)\
+            .delete(synchronize_session=False)
+        db.delete(p)
+        db.commit()
     return RedirectResponse("/admin", 302)
 
 
@@ -901,8 +923,16 @@ def admin_cat_delete(dep_id: int, request: Request, db: Session = Depends(get_db
     d = db.get(models.Department, dep_id)
     if d:
         db.query(models.User).filter(models.User.department_id == dep_id)\
-            .update({models.User.department_id: None})
-        db.query(models.Request).filter(models.Request.department_id == dep_id).delete()
+            .update({models.User.department_id: None}, synchronize_session=False)
+        for r in db.query(models.Request).filter(models.Request.department_id == dep_id).all():
+            for att in r.attachments:
+                try:
+                    fp = att.file_path.lstrip("/")
+                    if os.path.exists(fp):
+                        os.remove(fp)
+                except Exception:
+                    pass
+            db.delete(r)
         db.delete(d); db.commit()
     return RedirectResponse("/admin", 302)
 
