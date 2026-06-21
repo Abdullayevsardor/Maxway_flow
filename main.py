@@ -139,11 +139,31 @@ def send_telegram(chat_id: str, text: str, button_url: str = "",
 
 
 def base_requests(db: Session, user):
-    """Klient bo'lsa faqat o'z filiali zayavkalari, aks holда hammasi."""
+    """Klient → o'z filiali; bo'limga biriktirilgan admin/menejer/ijrochi → faqat o'z bo'limi;
+    bo'limsiz admin (категория = —) → barcha zayavkalar (bosh admin)."""
     q = db.query(models.Request)
     if user.role == Role.client:
         q = q.filter(models.Request.branch_id == user.user_branch_id)
+    elif user.role in (Role.admin, Role.manager, Role.executor) and user.department_id:
+        q = q.filter(models.Request.department_id == user.department_id)
     return q
+
+
+def scoped_executors(db: Session, user):
+    """Biriktirish uchun ijrochilar: bo'limga biriktirilgan admin/menejer faqat
+    o'z bo'limidagi ijrochilarni ko'radi; bo'limsiz admin — hammasini."""
+    q = db.query(models.User).filter(models.User.is_active == True)
+    if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id:
+        q = q.filter(models.User.department_id == user.department_id)
+    return q.all()
+
+
+def scoped_departments(db: Session, user):
+    """Bo'limga biriktirilgan admin/ijrochi faqat o'z bo'limini ko'radi."""
+    q = db.query(models.Department)
+    if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id:
+        q = q.filter(models.Department.id == user.department_id)
+    return q.all()
 
 
 def add_history(db: Session, req: models.Request, status: models.Status, note=""):
@@ -224,7 +244,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "in_progress": q.filter(models.Request.status == Status.in_progress).count(),
         "done": q.filter(models.Request.status == Status.done).count(),
         "unassigned": q.filter(models.Request.assigned_to.is_(None)).count(),
-        "departments": db.query(models.Department).all(),
+        "departments": scoped_departments(db, user),
         "recent": q.order_by(models.Request.created_at.desc()).limit(10).all(),
     }
     return templates.TemplateResponse(request, "dashboard.html", ctx)
@@ -271,8 +291,8 @@ def requests_page(request: Request, department_id: Optional[int] = None,
         subcats_map.setdefault(s.department_id, []).append({"id": s.id, "name": s.name})
     return templates.TemplateResponse(request, "requests.html", {
         "request": request, "user": user, "active": "requests",
-        "items": items, "departments": db.query(models.Department).all(),
-        "executors": db.query(models.User).all(), "selected_dep": selected_dep,
+        "items": items, "departments": scoped_departments(db, user),
+        "executors": scoped_executors(db, user), "selected_dep": selected_dep,
         "selected_status": status, "counts": counts, "search": q or "",
         "branches": db.query(models.Branch).order_by(models.Branch.name).all(),
         "subcats_map": subcats_map,
@@ -289,9 +309,13 @@ def request_detail(req_id: int, request: Request, db: Session = Depends(get_db))
         raise HTTPException(404, "Заявка не найдена")
     if user.role == Role.client and r.branch_id != user.user_branch_id:
         return RedirectResponse("/requests", 302)
+    # bo'limga biriktirilgan admin/menejer/ijrochi boshqa bo'lim zayavkasini ko'rolmaydi
+    if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id \
+            and r.department_id != user.department_id:
+        return RedirectResponse("/requests", 302)
     return templates.TemplateResponse(request, "request_detail.html", {
         "request": request, "user": user, "active": "requests", "r": r,
-        "executors": db.query(models.User).filter(models.User.is_active == True).all(),
+        "executors": scoped_executors(db, user),
     })
 
 
@@ -431,10 +455,17 @@ def assign_request(req_id: int, request: Request, assigned_to: int = Form(...),
         return RedirectResponse("/login", 302)
     r = db.get(models.Request, req_id)
     if r:
+        # bo'limga biriktirilgan admin/menejer faqat o'z bo'limida ish qiladi
+        if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id:
+            if r.department_id != user.department_id:
+                return RedirectResponse("/requests", 302)
+            assignee_chk = db.get(models.User, assigned_to)
+            if not assignee_chk or assignee_chk.department_id != user.department_id:
+                return RedirectResponse(f"/requests/{req_id}", 302)
         r.assigned_to = assigned_to
         if r.status in (Status.new, Status.rejected):
             r.status = Status.in_progress
-            add_history(db, r, Status.in_progress, "Ижрочи бириктирилди")
+            add_history(db, r, Status.in_progress, "Исполнитель назначен")
         db.commit()
         # Telegram xabari (ijrochining chat_id si bo'lsa)
         assignee = db.get(models.User, assigned_to)
@@ -641,7 +672,11 @@ def executors_page(request: Request, db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
-    people = db.query(models.User).order_by(models.User.full_name).all()
+    people_q = db.query(models.User)
+    # bo'limga biriktirilgan admin/ijrochi faqat o'z bo'limidagilarni ko'radi
+    if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id:
+        people_q = people_q.filter(models.User.department_id == user.department_id)
+    people = people_q.order_by(models.User.full_name).all()
     stats = {}
     for p in people:
         rq = db.query(models.Request).filter(models.Request.assigned_to == p.id)
