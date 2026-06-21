@@ -189,7 +189,7 @@ def login_submit(request: Request, email: str = Form(...), password: str = Form(
     user = db.query(models.User).filter(models.User.email == email.lower()).first()
     if not user or not auth.verify_password(password, user.hashed_password):
         return templates.TemplateResponse(request, "login.html",
-            {"request": request, "error": "Email yoki parol noto'g'ri"}, status_code=401)
+            {"request": request, "error": "Неверный email или пароль"}, status_code=401)
     token = auth.create_access_token(user.id)
     resp = RedirectResponse("/dashboard", 302)
     resp.set_cookie(auth.COOKIE_NAME, token, httponly=True, max_age=604800)
@@ -237,6 +237,10 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse("/login", 302)
     q = base_requests(db, user)
+    from sqlalchemy import func as _func
+    # har bo'lim bo'yicha foydalanuvchining o'z zayavkalari soni
+    dep_counts = dict(q.with_entities(models.Request.department_id, _func.count(models.Request.id))
+                      .group_by(models.Request.department_id).all())
     ctx = {
         "request": request, "user": user, "active": "dashboard",
         "total": q.count(),
@@ -245,6 +249,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "done": q.filter(models.Request.status == Status.done).count(),
         "unassigned": q.filter(models.Request.assigned_to.is_(None)).count(),
         "departments": scoped_departments(db, user),
+        "dep_counts": dep_counts,
         "recent": q.order_by(models.Request.created_at.desc()).limit(10).all(),
     }
     return templates.TemplateResponse(request, "dashboard.html", ctx)
@@ -395,7 +400,8 @@ def notify_category(db: Session, r: models.Request):
         models.User.is_active == True,
         models.User.id != r.created_by,
         models.User.role.in_([Role.executor, Role.manager, Role.admin]),
-        ((models.User.department_id == r.department_id) | (models.User.role == Role.admin))
+        ((models.User.department_id == r.department_id)
+         | ((models.User.role == Role.admin) & (models.User.department_id.is_(None))))
     ).all()
     seen = set()
     link = f"/requests/{r.id}"
@@ -425,10 +431,26 @@ def api_notifications(request: Request, db: Session = Depends(get_db)):
     if not user:
         return JSONResponse({"unread": 0, "items": []})
     items = db.query(models.Notification).filter(models.Notification.user_id == user.id)\
-        .order_by(models.Notification.created_at.desc()).limit(20).all()
-    unread = db.query(models.Notification).filter(
-        models.Notification.user_id == user.id,
-        models.Notification.is_read == False).count()
+        .order_by(models.Notification.created_at.desc()).limit(50).all()
+    # bo'limga biriktirilgan foydalanuvchi faqat o'z bo'limi zayavkalariga oid xabarlarni ko'radi
+    if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id:
+        kept = []
+        for n in items:
+            ok = True
+            if n.link and n.link.startswith("/requests/"):
+                try:
+                    rid = int(n.link.rsplit("/", 1)[1])
+                    req = db.get(models.Request, rid)
+                    if req and req.department_id != user.department_id:
+                        ok = False
+                except (ValueError, IndexError):
+                    pass
+            if ok:
+                kept.append(n)
+        items = kept[:20]
+    else:
+        items = items[:20]
+    unread = sum(1 for n in items if not n.is_read)
     return JSONResponse({
         "unread": unread,
         "items": [{"text": n.text, "link": n.link, "is_read": n.is_read,
@@ -843,12 +865,16 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
     from sqlalchemy import func as _func
     req_counts = dict(db.query(models.Request.created_by, _func.count(models.Request.id))
                       .group_by(models.Request.created_by).all())
+    # har filialning login (client) emaili — tahrirlashda ko'rsatish uchun
+    branch_logins = dict(db.query(models.User.user_branch_id, models.User.email)
+                         .filter(models.User.role == Role.client,
+                                 models.User.user_branch_id.isnot(None)).all())
     return templates.TemplateResponse(request, "admin.html", {
         "request": request, "user": user, "active": "admin",
         "users": db.query(models.User).order_by(models.User.full_name).all(),
         "departments": db.query(models.Department).all(),
         "branches": db.query(models.Branch).order_by(models.Branch.name).all(),
-        "req_counts": req_counts,
+        "req_counts": req_counts, "branch_logins": branch_logins,
     })
 
 
@@ -1038,7 +1064,8 @@ def admin_branch_delete(bid: int, request: Request, db: Session = Depends(get_db
 @app.post("/admin/branches/{bid}/edit")
 def admin_branch_edit(bid: int, request: Request, name: str = Form(...),
                       location: str = Form(""), phone: str = Form(""),
-                      director_name: str = Form(""), db: Session = Depends(get_db)):
+                      director_name: str = Form(""), login_email: str = Form(""),
+                      password: str = Form(""), db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
@@ -1048,6 +1075,28 @@ def admin_branch_edit(bid: int, request: Request, name: str = Form(...),
         b.location = location.strip()
         b.phone = phone.strip()
         b.director_name = director_name.strip()
+        # filial logini (client akkaunt)
+        login_email = login_email.lower().strip()
+        client = db.query(models.User).filter(
+            models.User.user_branch_id == bid, models.User.role == Role.client).first()
+        if login_email:
+            taken = db.query(models.User).filter(
+                models.User.email == login_email,
+                models.User.user_branch_id != bid).first()
+            if client:
+                # mavjud login: email (band bo'lmasa) va parol (kiritilgan bo'lsa) yangilanadi
+                if not taken and login_email != client.email:
+                    client.email = login_email
+                if password.strip():
+                    client.hashed_password = auth.hash_password(password.strip())
+            elif not taken:
+                # login yo'q edi — yangi client akkaunt yaratamiz
+                db.add(models.User(full_name=b.name, email=login_email,
+                                   hashed_password=auth.hash_password(password.strip() or "12345678"),
+                                   role=Role.client, user_branch_id=bid, is_active=True))
+        elif client and password.strip():
+            # email o'zgarmasa ham — faqat parol yangilash
+            client.hashed_password = auth.hash_password(password.strip())
         db.commit()
     return RedirectResponse("/admin", 302)
 

@@ -22,7 +22,7 @@
     <div class="cat-grid">
       {% for d in departments %}
       <a href="/requests?department_id={{ d.id }}" class="cat-card">
-        <div><div class="cname">{{ d.name }}</div><div class="ccount">{{ d.requests|length }} заявок</div></div>
+        <div><div class="cname">{{ d.name }}</div><div class="ccount">{{ dep_counts.get(d.id, 0) }} заявок</div></div>
       </a>
       {% else %}<div class="empty">Категории не созданы</div>{% endfor %}
     </div>
