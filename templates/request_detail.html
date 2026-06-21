@@ -7,7 +7,7 @@
 <div class="page-head">
   <a href="/requests" class="btn btn-light">← Назад к заявкам</a>
   <div class="head-actions">
-    {% if user.role.value != 'client' %}
+    {% if user.role.value in ['admin','manager'] %}
     <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca" onclick="openModal('reject')">⊘ Отклонить</button>
     <button class="btn btn-blue" onclick="openModal('assign')">＋ Назначить исполнителя</button>
     {% endif %}
@@ -77,6 +77,7 @@
           <div><span>🔄 Обновлена</span><b>{{ r.updated_at.strftime('%d.%m.%Y %H:%M') }}</b></div>
         </div>
         <!-- status o'zgartirish -->
+        {% if user.role.value in ['admin','manager'] %}
         <form method="post" action="/requests/{{ r.id }}/status" style="margin-top:16px;display:flex;gap:8px;align-items:center">
           <span style="font-size:13px;color:var(--muted)">Статус:</span>
           <select name="status" onchange="this.form.submit()" class="inp">
@@ -85,7 +86,26 @@
             {% endfor %}
           </select>
         </form>
-        {% if user.role.value != 'client' %}
+        {% elif user.role.value == 'executor' %}
+        <div style="margin-top:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          {% if r.status.value == 'new' %}
+          <form method="post" action="/requests/{{ r.id }}/status">
+            <input type="hidden" name="status" value="approved">
+            <button type="submit" class="btn btn-blue">✓ Одобрить</button>
+          </form>
+          {% elif r.status.value == 'approved' %}
+          <form method="post" action="/requests/{{ r.id }}/status">
+            <input type="hidden" name="status" value="in_progress">
+            <button type="submit" class="btn btn-blue">▶ Начать работу</button>
+          </form>
+          {% elif r.status.value in ['in_progress','on_check'] %}
+          <span style="font-size:13px;color:var(--muted)">⬇ Завершите работу, отправив решение ниже</span>
+          {% elif r.status.value == 'done' %}
+          <span class="tag done">✓ Работа завершена</span>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% if user.role.value in ['admin','manager'] or (user.role.value == 'executor' and r.status.value in ['in_progress','on_check']) %}
         <form method="post" action="/requests/{{ r.id }}/solution" enctype="multipart/form-data"
               style="margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
           <div style="font-weight:600;margin-bottom:10px">✅ Отправить решение (как исправлено)</div>

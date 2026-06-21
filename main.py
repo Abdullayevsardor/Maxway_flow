@@ -70,6 +70,35 @@ print(">>> [MAXWAY] auto_seed boshlandi", flush=True)
 _auto_seed()
 print(">>> [MAXWAY] auto_seed tugadi — ilova yaratilmoqda", flush=True)
 
+
+def _admin_tools():
+    """Startupда: barcha admin emaillarini ko'rsatadi va (ADMIN_RESET berilsa) parol tiklaydi.
+    ADMIN_RESET formati: "email:yangiparol"  (masalan: a.ruzikulov@gmail.com:12345678)"""
+    try:
+        db = SessionLocal()
+        admins = db.query(models.User).filter(models.User.role == models.Role.admin).all()
+        print(">>> [MAXWAY] Adminlar:", flush=True)
+        for a in admins:
+            print(f"      - {a.email}  (active={a.is_active})", flush=True)
+        reset = os.environ.get("ADMIN_RESET", "").strip()
+        if reset and ":" in reset:
+            em, pw = reset.split(":", 1)
+            em = em.lower().strip()
+            u = db.query(models.User).filter(models.User.email == em).first()
+            if u:
+                u.hashed_password = auth.hash_password(pw)
+                u.is_active = True
+                db.commit()
+                print(f">>> [MAXWAY] ✅ Parol tiklandi: {em}", flush=True)
+            else:
+                print(f">>> [MAXWAY] ⚠ ADMIN_RESET: '{em}' topilmadi", flush=True)
+        db.close()
+    except Exception as e:
+        print(">>> [MAXWAY] admin_tools xato:", e, flush=True)
+
+
+_admin_tools()
+
 app = FastAPI(title="MAXWAY")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
@@ -485,9 +514,10 @@ def assign_request(req_id: int, request: Request, assigned_to: int = Form(...),
             if not assignee_chk or assignee_chk.department_id != user.department_id:
                 return RedirectResponse(f"/requests/{req_id}", 302)
         r.assigned_to = assigned_to
-        if r.status in (Status.new, Status.rejected):
-            r.status = Status.in_progress
-            add_history(db, r, Status.in_progress, "Исполнитель назначен")
+        # statusni majburan o'zgartirmaymiz — ijrochi o'zi: Одобрить → Начать работу
+        if r.status == Status.rejected:
+            r.status = Status.new
+        add_history(db, r, r.status, "Исполнитель назначен")
         db.commit()
         # Telegram xabari (ijrochining chat_id si bo'lsa)
         assignee = db.get(models.User, assigned_to)
@@ -550,8 +580,16 @@ def change_status(req_id: int, request: Request, status: str = Form(...),
         return RedirectResponse("/login", 302)
     r = db.get(models.Request, req_id)
     if r and status in STATUS_LABELS:
+        notes = {
+            "new": "Статус изменён",
+            "approved": "Одобрено исполнителем",
+            "in_progress": "Работа начата",
+            "on_check": "Отправлено на проверку",
+            "done": "Работа завершена",
+            "rejected": "Отклонено",
+        }
         r.status = Status(status)
-        add_history(db, r, Status(status), "Статус изменён")
+        add_history(db, r, Status(status), notes.get(status, "Статус изменён"))
         db.commit()
     ref = request.headers.get("referer", f"/requests/{req_id}")
     return RedirectResponse(ref, 302)
@@ -614,6 +652,10 @@ def add_solution(req_id: int, request: Request, comment: str = Form(""),
     if comment.strip():
         db.add(models.Comment(request_id=r.id, user_id=user.id,
                text="✅ Решение: " + comment.strip()))
+    # yechim yuborilgach — ish yakunlandi
+    if r.status not in (Status.done, Status.rejected):
+        r.status = Status.done
+        add_history(db, r, Status.done, "Работа завершена")
     db.commit()
     # zayavка egasiga (klиентга) bildirishnoma
     if r.created_by and r.created_by != user.id:
