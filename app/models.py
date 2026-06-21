@@ -197,6 +197,7 @@ class Notification(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     text = Column(String(300), nullable=False)
+    from_name = Column(String(120), nullable=True)   # kim yuborgani
     link = Column(String(255), default="")
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=tashkent_now)

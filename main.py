@@ -28,7 +28,8 @@ def _ensure_columns():
     checks = [("attachments", "stage", "VARCHAR(10) DEFAULT 'request'"),
               ("requests", "subcategory_id", "INTEGER"),
               ("branches", "phone", "VARCHAR(40) DEFAULT ''"),
-              ("branches", "director_name", "VARCHAR(120) DEFAULT ''")]
+              ("branches", "director_name", "VARCHAR(120) DEFAULT ''"),
+              ("notifications", "from_name", "VARCHAR(120)")]
     try:
         insp = sa_inspect(engine)
         tables = insp.get_table_names()
@@ -193,6 +194,13 @@ def scoped_departments(db: Session, user):
     if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id:
         q = q.filter(models.Department.id == user.department_id)
     return q.all()
+
+
+def display_name(u):
+    """Filial (client) bo'lsa — direktor ismi, aks holda full_name."""
+    if u and u.role == Role.client and u.branch and u.branch.director_name:
+        return u.branch.director_name
+    return u.full_name if u else "—"
 
 
 def add_history(db: Session, req: models.Request, status: models.Status, note=""):
@@ -447,7 +455,8 @@ def notify_category(db: Session, r: models.Request):
         if u.id in seen:
             continue
         seen.add(u.id)
-        db.add(models.Notification(user_id=u.id, text=site_text, link=link))
+        db.add(models.Notification(user_id=u.id, text=site_text, link=link,
+                                   from_name=r.customer_name or "—"))
         if u.telegram_chat_id:
             send_telegram(u.telegram_chat_id, tg_text,
                           button_url=f"{get_app_url()}{link}")
@@ -483,6 +492,7 @@ def api_notifications(request: Request, db: Session = Depends(get_db)):
     return JSONResponse({
         "unread": unread,
         "items": [{"text": n.text, "link": n.link, "is_read": n.is_read,
+                   "from_name": n.from_name or "",
                    "time": n.created_at.strftime("%d.%m %H:%M")} for n in items]
     })
 
@@ -609,7 +619,8 @@ def add_comment(req_id: int, request: Request, text: str = Form(...),
         if r.created_by and r.created_by != user.id:
             link = f"/requests/{r.id}"
             db.add(models.Notification(user_id=r.created_by,
-                   text=f"Новый комментарий к «{r.title}»: {text.strip()[:60]}", link=link))
+                   text=f"Новый комментарий к «{r.title}»: {text.strip()[:60]}", link=link,
+                   from_name=display_name(user)))
             db.commit()
             creator = db.get(models.User, r.created_by)
             if creator and creator.telegram_chat_id:
@@ -661,7 +672,8 @@ def add_solution(req_id: int, request: Request, comment: str = Form(""),
     if r.created_by and r.created_by != user.id:
         link = f"/requests/{r.id}"
         db.add(models.Notification(user_id=r.created_by,
-               text=f"Добавлено решение по заявке «{r.title}»", link=link))
+               text=f"Добавлено решение по заявке «{r.title}»", link=link,
+               from_name=display_name(user)))
         db.commit()
         creator = db.get(models.User, r.created_by)
         if creator and creator.telegram_chat_id:

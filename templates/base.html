@@ -109,7 +109,8 @@
       }else{
         list.innerHTML=d.items.map(n=>
           `<a href="${n.link}" class="notif-item${n.is_read?'':' unread'}">
-             <div>${n.text}</div><div class="notif-time">${n.time}</div></a>`).join('');
+             <div>${n.text}</div>
+             <div class="notif-time">${n.from_name?'👤 '+n.from_name+' · ':''}${n.time}</div></a>`).join('');
       }
     }catch(e){}
   }
