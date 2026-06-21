@@ -22,7 +22,6 @@
     <div class="cat-grid">
       {% for d in departments %}
       <a href="/requests?department_id={{ d.id }}" class="cat-card">
-        <div class="cat-ico" style="color:{{ d.color }}">{{ d.icon }}</div>
         <div><div class="cname">{{ d.name }}</div><div class="ccount">{{ d.requests|length }} заявок</div></div>
       </a>
       {% else %}<div class="empty">Категории не созданы</div>{% endfor %}

@@ -94,10 +94,10 @@ def seed():
                 assigned_to=admin.id if st in (Status.in_progress, Status.done, Status.approved) else None)
             db.add(r); db.flush()
             db.add(models.StatusHistory(request_id=r.id, status=Status.new,
-                note="Заявка яратилди", created_at=now - timedelta(days=2)))
+                note="Заявка создана", created_at=now - timedelta(days=2)))
             if st != Status.new:
                 db.add(models.StatusHistory(request_id=r.id, status=st,
-                    note="Статус ўзгарди", created_at=now - timedelta(days=1)))
+                    note="Статус изменён", created_at=now - timedelta(days=1)))
             if i < 2:
                 db.add(models.Comment(request_id=r.id, user_id=admin.id,
                     text="nima oshibka ko'rsatgan rasmi bilan tashang, yoki masala hal bo'ldimi"))

@@ -37,7 +37,7 @@
       {% if user.role.value == 'client' and user.branch %}
         <div class="udep">🏢 {{ user.branch.name }}</div>
       {% elif user.department %}
-        <div class="udep">{{ user.department.icon }} {{ user.department.name }}</div>
+        <div class="udep">{{ user.department.name }}</div>
       {% endif %}
     </div>
   </aside>

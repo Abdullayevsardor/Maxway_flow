@@ -50,7 +50,7 @@
         <div class="ex-acts">
           <button class="icon-act" title="Изменить"
             onclick='openEdit({{ {"id":p.id,"full_name":p.full_name,"position":p.position or "","specialization":p.specialization or "","phone":p.phone or "","schedule":p.schedule or "","experience":p.experience or "","telegram":p.telegram or ""}|tojson }})'>✏</button>
-          <form method="post" action="/executors/{{ p.id }}/delete" onsubmit="return confirm('«{{ p.full_name }}» ўчирилсинми?')">
+          <form method="post" action="/executors/{{ p.id }}/delete" onsubmit="return confirm('Удалить «{{ p.full_name }}»?')">
             <button class="icon-act" title="Удалить" style="color:#dc2626">🗑</button>
           </form>
         </div>
@@ -88,7 +88,7 @@
       </div>
     </div>
   </div>
-  {% else %}<div class="empty">Ходимлар йўқ</div>{% endfor %}
+  {% else %}<div class="empty">Сотрудников нет</div>{% endfor %}
 </div>
 
 <!-- Qo'shish modal -->

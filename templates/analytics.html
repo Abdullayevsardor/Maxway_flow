@@ -40,7 +40,7 @@
       <div class="bar-track"><div class="bar-fill" style="width:{{ (cnt/max_count*100) }}%;background:{{ color }}"></div></div>
       <div class="bval">{{ cnt }}</div>
     </div>
-    {% else %}<div class="empty">Маълумот йўқ</div>{% endfor %}
+    {% else %}<div class="empty">Нет данных</div>{% endfor %}
   </div>
 </div>
 
@@ -62,7 +62,7 @@
           </div>
         </td>
       </tr>
-      {% else %}<tr><td colspan="4" class="empty">Маълумот йўқ</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="4" class="empty">Нет данных</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>

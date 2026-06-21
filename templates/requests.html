@@ -4,7 +4,7 @@
 
 <div class="page-head">
   <div>
-    <h1>{% if selected_dep %}{{ selected_dep.icon }} {{ selected_dep.name }}{% else %}Заявки{% endif %}</h1>
+    <h1>{% if selected_dep %}{{ selected_dep.name }}{% else %}Заявки{% endif %}</h1>
     <p>Всего: {{ counts.all }}</p>
   </div>
   <div class="head-actions">
@@ -48,13 +48,13 @@
         </td>
         <td data-label="Статус"><span class="tag {{ r.status.value }}">{{ STATUS_LABELS[r.status.value] }}</span></td>
         <td data-label="Приоритет"><span class="tag {{ r.priority.value }}">{{ PRIORITY_LABELS[r.priority.value] }}</span></td>
-        <td data-label="Категория">{{ r.department.icon }} {{ r.department.name }}</td>
+        <td data-label="Категория">{{ r.department.name }}</td>
         <td data-label="Заказчик">{{ r.customer_name or "—" }}</td>
         <td data-label="Исполнитель">{{ r.assignee.full_name if r.assignee else "—" }}</td>
         <td data-label="Дедлайн" style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y') if r.deadline else "—" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="empty">Заявка топилмади</td></tr>
+      <tr><td colspan="8" class="empty">Заявка не найдена</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -68,7 +68,7 @@
       <div style="display:flex;gap:12px">
         <div class="field" style="flex:1"><label>Категория</label>
           <select name="department_id" id="catSelect" required onchange="updateSubcats()">
-            {% for d in departments %}<option value="{{ d.id }}" {{ 'selected' if selected_dep and selected_dep.id==d.id }}>{{ d.icon }} {{ d.name }}</option>{% endfor %}
+            {% for d in departments %}<option value="{{ d.id }}" {{ 'selected' if selected_dep and selected_dep.id==d.id }}>{{ d.name }}</option>{% endfor %}
           </select></div>
         <div class="field" style="flex:1"><label>Приоритет</label>
           <select name="priority"><option value="low">Низкий</option><option value="medium" selected>Средний</option><option value="high">Высокий</option></select></div>
