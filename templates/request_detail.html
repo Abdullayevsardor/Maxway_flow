@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ r.title }}{% endblock %}
 {% block content %}
+{# Filial (client) bo'lsa — direktor ismini, aks holda full_name #}
+{% macro dname(u) %}{% if u %}{% if u.role.value == 'client' and u.branch and u.branch.director_name %}{{ u.branch.director_name }}{% else %}{{ u.full_name }}{% endif %}{% else %}—{% endif %}{% endmacro %}
 
 <div class="page-head">
   <a href="/requests" class="btn btn-light">← Назад к заявкам</a>
@@ -66,11 +68,11 @@
         </div>
         {% endif %}
         <div class="meta-grid">
-          <div><span>👤 Создал</span><b>{{ r.creator.full_name if r.creator else "—" }}</b></div>
+          <div><span>👤 Создал</span><b>{{ dname(r.creator) }}</b></div>
           <div><span>📅 Создана</span><b>{{ r.created_at.strftime('%d.%m.%Y %H:%M') }}</b></div>
           <div><span>👤 Исполнитель</span><b>{{ r.assignee.full_name if r.assignee else "—" }}</b></div>
           <div><span>⏰ Дедлайн</span><b style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y') if r.deadline else "—" }}</b></div>
-          <div><span>🏷 Категория</span><b>{{ r.department.icon }} {{ r.department.name }}</b></div>
+          <div><span>🏷 Категория</span><b>{{ r.department.name }}</b></div>
           {% if r.subcategory %}<div><span>📂 Подкатегория</span><b>{{ r.subcategory.name }}</b></div>{% endif %}
           <div><span>🔄 Обновлена</span><b>{{ r.updated_at.strftime('%d.%m.%Y %H:%M') }}</b></div>
         </div>
@@ -110,7 +112,7 @@
         {% for c in r.comments %}
         <div class="comment" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
           <div>
-            <div><b>{{ c.user.full_name if c.user else "—" }}</b> <span style="color:#94a3b8;font-size:12px">{{ c.created_at.strftime('%d.%m.%Y %H:%M') }}</span></div>
+            <div><b>{{ dname(c.user) }}</b> <span style="color:#94a3b8;font-size:12px">{{ c.created_at.strftime('%d.%m.%Y %H:%M') }}</span></div>
             <div style="color:#475569;margin-top:2px">{{ c.text }}</div>
           </div>
           {% if user.role.value in ['admin','manager'] or (c.user and c.user.id == user.id) %}

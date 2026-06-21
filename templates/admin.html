@@ -260,5 +260,16 @@
     document.getElementById('b_phone').value=d.phone||'+998 ';
     open_('branchEdit');
   }
+
+  // amaldan (delete/save) keyin sahifa boshiga sakramasligi uchun scroll holatini saqlaymiz
+  window.addEventListener('load', function(){
+    try {
+      var y = sessionStorage.getItem('admin_scroll');
+      if(y!==null){ window.scrollTo(0, parseInt(y,10)); sessionStorage.removeItem('admin_scroll'); }
+    } catch(e){}
+  });
+  document.addEventListener('submit', function(){
+    try { sessionStorage.setItem('admin_scroll', String(window.scrollY)); } catch(e){}
+  });
 </script>
 {% endblock %}
