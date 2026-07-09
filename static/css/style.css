@@ -650,3 +650,13 @@ img, video, table { max-width: 100%; }
   .cat-grid { grid-template-columns: 1fr; }
   .content { padding: 13px; }
 }
+
+/* ========================================================= */
+/* ===== KRITIK: mobil layout tuzatish (margin reset) ====== */
+/* Sidebar yopilganda kontent to'liq enlikda bo'lishi shart  */
+@media (max-width: 760px) {
+  .main    { margin-left: 0 !important; width: 100% !important; }
+  .content { max-width: 100% !important; width: 100% !important; }
+  .sidebar { transform: translateX(-100%); transition: transform .25s; z-index: 60; }
+  .sidebar.open { transform: translateX(0); }
+}
