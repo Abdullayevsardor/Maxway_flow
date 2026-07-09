@@ -40,7 +40,7 @@
        data-active="{{ '1' if p.is_active else '0' }}">
     <div class="panel-body" style="padding:18px">
       <div style="display:flex;gap:12px;align-items:flex-start">
-        <div class="ex-av">{{ initials or '?' }}
+        <div class="ex-av">{% if p.avatar %}<img src="{{ p.avatar }}" alt="">{% else %}{{ initials or '?' }}{% endif %}
           <span class="ex-dot" style="background:{{ '#22c55e' if p.is_active else '#cbd5e1' }}"></span>
         </div>
         <div style="flex:1;min-width:0">

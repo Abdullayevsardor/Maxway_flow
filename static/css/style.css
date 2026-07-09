@@ -660,3 +660,7 @@ img, video, table { max-width: 100%; }
   .sidebar { transform: translateX(-100%); transition: transform .25s; z-index: 60; }
   .sidebar.open { transform: translateX(0); }
 }
+
+/* Ijrochi karta avatari — rasm bo'lsa dumaloqni to'ldiradi */
+.ex-av{overflow:hidden}
+.ex-av img{width:46px;height:46px;border-radius:50%;object-fit:cover;display:block}
