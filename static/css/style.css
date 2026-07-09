@@ -599,3 +599,54 @@ h1,h2,h3{font-weight:600}
 .role-select{padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;
   font-weight:600;background:#f8fafc;cursor:pointer;color:#334155}
 .role-select:hover{border-color:#2563eb}
+
+/* ========================================================= */
+/* ===== MOBIL RESPONSIVE — kuchaytirilgan (v2) ============ */
+/* ========================================================= */
+
+/* Har qanday gorizontal siljishni yo'q qilamiz (asosiy sabab) */
+html, body { overflow-x: hidden; max-width: 100%; }
+img, video, table { max-width: 100%; }
+
+@media (max-width: 760px) {
+  /* Sidebar barmoqqa qulay, ustidan chiqadi */
+  .sidebar { width: min(84vw, 300px); box-shadow: 4px 0 24px rgba(0,0,0,.25); }
+
+  /* Kontent to'liq kenglik */
+  .content { padding: 16px; }
+
+  /* Statistika — 2 ustun, ixcham raqamlar */
+  .stats { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .stat { padding: 16px 16px; }
+  .stat .val { font-size: 24px; }
+  .stat .label { font-size: 12.5px; margin-bottom: 8px; }
+
+  /* Kategoriya kartalari — teng 2 ustun (siqilib qolmaydi) */
+  .cat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cat-card { min-width: 0; }
+
+  /* Analitika: bo'lim nomi tepada, bar pastda to'liq enlik */
+  .bar-row { flex-wrap: wrap; gap: 6px 10px; }
+  .bar-row .bname { width: 100%; font-size: 13px; }
+
+  /* Ijrochilar toolbari — hammasi ustma-ust, to'liq enlik */
+  .ex-toolbar { flex-direction: column; align-items: stretch; }
+  .ex-toolbar input[type=text], .ex-toolbar select { width: 100%; min-width: 0; }
+  .people { grid-template-columns: 1fr; }
+
+  /* Topbar ixcham */
+  .topbar { height: 58px; padding: 0 12px; }
+  .page-head h1 { font-size: 20px; }
+
+  /* Bildirishnoma paneli — deyarli to'liq ekran */
+  .notif-panel { width: 92vw; max-width: 92vw; right: -92vw; }
+
+  /* Barmoqqa qulay havolalar */
+  .nav a { padding: 14px 14px; font-size: 15.5px; }
+}
+
+@media (max-width: 400px) {
+  .stats { grid-template-columns: 1fr; }
+  .cat-grid { grid-template-columns: 1fr; }
+  .content { padding: 13px; }
+}
