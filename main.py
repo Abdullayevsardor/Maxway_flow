@@ -709,7 +709,8 @@ def profile_page(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/profile/update")
 def profile_update(request: Request, full_name: str = Form(...), phone: str = Form(""),
-                   bio: str = Form(""), current_password: str = Form(""),
+                   bio: str = Form(""), telegram_chat_id: str = Form(""),
+                   current_password: str = Form(""),
                    new_password: str = Form(""), confirm_password: str = Form(""),
                    photo: UploadFile = File(None), db: Session = Depends(get_db)):
     user = current_user(request, db)
@@ -718,6 +719,7 @@ def profile_update(request: Request, full_name: str = Form(...), phone: str = Fo
     user.full_name = full_name.strip()
     user.phone = phone.strip()
     user.bio = bio.strip()
+    user.telegram_chat_id = telegram_chat_id.strip() or None
     # rasm yuklash
     if photo is not None and photo.filename:
         ext = os.path.splitext(photo.filename)[1].lower()
