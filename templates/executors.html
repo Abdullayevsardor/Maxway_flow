@@ -7,10 +7,12 @@
   <div><h1>Исполнители</h1>
     <p>Всего: {{ people|length }} · Активных: {{ active_cnt }}</p></div>
   <div class="head-actions">
+    {% if user.role.value in ['admin','manager'] %}
     <button class="btn btn-blue" onclick="openAdd()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
       Добавить исполнителя
     </button>
+    {% endif %}
   </div>
 </div>
 
@@ -47,6 +49,7 @@
           <div class="ex-name">{{ p.full_name }}</div>
           <div class="ex-pos">{{ p.position or ROLE_LABELS.get(p.role.value).title() }}</div>
         </div>
+        {% if user.role.value in ['admin','manager'] %}
         <div class="ex-acts">
           <button class="icon-act" title="Изменить"
             onclick='openEdit({{ {"id":p.id,"full_name":p.full_name,"position":p.position or "","specialization":p.specialization or "","phone":p.phone or "","schedule":p.schedule or "","experience":p.experience or "","telegram":p.telegram or ""}|tojson }})'>✏</button>
@@ -54,6 +57,7 @@
             <button class="icon-act" title="Удалить" style="color:#dc2626">🗑</button>
           </form>
         </div>
+        {% endif %}
       </div>
 
       {% if p.specialization or p.department %}
@@ -80,11 +84,13 @@
 
       <div class="ex-foot">
         <span style="font-size:13px;color:{{ '#16a34a' if p.is_active else '#94a3b8' }}">● {{ 'Активен' if p.is_active else 'Неактивен' }}</span>
+        {% if user.role.value in ['admin','manager'] %}
         <form method="post" action="/executors/{{ p.id }}/toggle">
           <button type="submit" class="switch {{ 'on' if p.is_active }}" title="Вкл/Выкл">
             <span class="switch-knob"></span><span class="switch-txt">{{ 'Вкл' if p.is_active else 'Выкл' }}</span>
           </button>
         </form>
+        {% endif %}
       </div>
     </div>
   </div>

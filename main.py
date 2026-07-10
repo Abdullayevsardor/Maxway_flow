@@ -372,6 +372,8 @@ def create_request(request: Request, title: str = Form(...), description: str = 
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
+    if user.role == Role.executor:
+        return RedirectResponse("/requests", 302)
     dl = None
     if deadline:
         try:
@@ -773,6 +775,8 @@ def toggle_executor(uid: int, request: Request, db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
+    if user.role not in (Role.admin, Role.manager):
+        return RedirectResponse("/executors", 302)
     p = db.get(models.User, uid)
     if p:
         p.is_active = not p.is_active
@@ -788,6 +792,8 @@ def create_executor(request: Request, full_name: str = Form(...), email: str = F
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
+    if user.role not in (Role.admin, Role.manager):
+        return RedirectResponse("/executors", 302)
     email = email.lower().strip()
     if not db.query(models.User).filter(models.User.email == email).first():
         db.add(models.User(full_name=full_name.strip(), email=email,
@@ -804,6 +810,8 @@ def delete_executor(uid: int, request: Request, db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
+    if user.role not in (Role.admin, Role.manager):
+        return RedirectResponse("/executors", 302)
     p = db.get(models.User, uid)
     if p and p.id != user.id:
         db.query(models.Request).filter(models.Request.assigned_to == uid)\
@@ -821,6 +829,8 @@ def edit_executor(uid: int, request: Request, full_name: str = Form(...),
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
+    if user.role not in (Role.admin, Role.manager):
+        return RedirectResponse("/executors", 302)
     p = db.get(models.User, uid)
     if p:
         p.full_name = full_name.strip()
