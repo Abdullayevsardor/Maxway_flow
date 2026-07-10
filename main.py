@@ -284,7 +284,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "new": q.filter(models.Request.status == Status.new).count(),
         "in_progress": q.filter(models.Request.status == Status.in_progress).count(),
         "done": q.filter(models.Request.status == Status.done).count(),
-        "unassigned": q.filter(models.Request.assigned_to.is_(None)).count(),
+        "unassigned": q.filter(~models.Request.assignees.any()).count(),
         "departments": scoped_departments(db, user),
         "dep_counts": dep_counts,
         "recent": q.order_by(models.Request.created_at.desc()).limit(10).all(),
@@ -525,15 +525,20 @@ def assign_request(req_id: int, request: Request, assigned_to: int = Form(...),
             assignee_chk = db.get(models.User, assigned_to)
             if not assignee_chk or assignee_chk.department_id != user.department_id:
                 return RedirectResponse(f"/requests/{req_id}", 302)
-        r.assigned_to = assigned_to
+        assignee = db.get(models.User, assigned_to)
+        if not assignee:
+            return RedirectResponse(f"/requests/{req_id}", 302)
+        # ro'yxatga qo'shamiz (avvalgilarni almashtirmaymiz)
+        if assignee not in r.assignees:
+            r.assignees.append(assignee)
+        r.assigned_to = assigned_to   # legacy: oxirgi biriktirilgan
         # statusni majburan o'zgartirmaymiz — ijrochi o'zi: Одобрить → Начать работу
         if r.status == Status.rejected:
             r.status = Status.new
-        add_history(db, r, r.status, "Исполнитель назначен")
+        add_history(db, r, r.status, f"Исполнитель назначен: {assignee.full_name}")
         db.commit()
         # Telegram xabari (ijrochining chat_id si bo'lsa)
-        assignee = db.get(models.User, assigned_to)
-        if assignee and assignee.telegram_chat_id:
+        if assignee.telegram_chat_id:
             br = r.branch_obj.name if r.branch_obj else (r.branch or "—")
             text = (f"🔔 <b>Новое назначение — MAXWAY</b>\n\n"
                     f"📌 <b>{r.title}</b>\n"
@@ -545,6 +550,22 @@ def assign_request(req_id: int, request: Request, assigned_to: int = Form(...),
                     f"⏰ Дедлайн: {r.deadline.strftime('%d.%m.%Y') if r.deadline else '—'}")
             send_telegram(assignee.telegram_chat_id, text,
                           button_url=f"{get_app_url()}/requests/{r.id}")
+    return RedirectResponse(f"/requests/{req_id}", 302)
+
+
+@app.post("/requests/{req_id}/unassign/{uid}")
+def unassign_request(req_id: int, uid: int, request: Request, db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user or user.role not in (Role.admin, Role.manager):
+        return RedirectResponse("/login", 302)
+    r = db.get(models.Request, req_id)
+    p = db.get(models.User, uid)
+    if r and p and p in r.assignees:
+        r.assignees.remove(p)
+        # legacy assigned_to ni yangilaymiz
+        r.assigned_to = r.assignees[-1].id if r.assignees else None
+        add_history(db, r, r.status, f"Исполнитель снят: {p.full_name}")
+        db.commit()
     return RedirectResponse(f"/requests/{req_id}", 302)
 
 
@@ -601,6 +622,11 @@ def change_status(req_id: int, request: Request, status: str = Form(...),
             "rejected": "Отклонено",
         }
         r.status = Status(status)
+        # ijrochi ishni boshlasa va hali biriktirilmagan bo'lsa — o'zi ro'yxatga qo'shiladi
+        if user.role == Role.executor and not r.assignees \
+                and status in ("approved", "in_progress", "on_check", "done"):
+            r.assignees.append(user)
+            r.assigned_to = user.id
         add_history(db, r, Status(status), notes.get(status, "Статус изменён"))
         db.commit()
     ref = request.headers.get("referer", f"/requests/{req_id}")
@@ -759,7 +785,7 @@ def executors_page(request: Request, db: Session = Depends(get_db)):
     people = people_q.order_by(models.User.full_name).all()
     stats = {}
     for p in people:
-        rq = db.query(models.Request).filter(models.Request.assigned_to == p.id)
+        rq = db.query(models.Request).filter(models.Request.assignees.any(models.User.id == p.id))
         stats[p.id] = {
             "total": rq.count(),
             "in_progress": rq.filter(models.Request.status == Status.in_progress).count(),
@@ -866,7 +892,7 @@ def analytics_page(request: Request, db: Session = Depends(get_db)):
     execs = db.query(models.User).filter(models.User.is_active == True).all()
     exec_stats = []
     for e in execs:
-        rq = db.query(models.Request).filter(models.Request.assigned_to == e.id)
+        rq = db.query(models.Request).filter(models.Request.assignees.any(models.User.id == e.id))
         t = rq.count()
         d = rq.filter(models.Request.status == Status.done).count()
         if t:
@@ -1182,5 +1208,5 @@ def api_requests(department_id: Optional[int] = None, db: Session = Depends(get_
     return [{"id": r.id, "title": r.title, "status": r.status.value,
              "priority": r.priority.value,
              "department": r.department.name if r.department else None,
-             "assignee": r.assignee.full_name if r.assignee else None}
+             "assignee": ", ".join(a.full_name for a in r.assignees) if r.assignees else None}
             for r in q.order_by(models.Request.created_at.desc()).all()]

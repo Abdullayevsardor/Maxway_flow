@@ -70,7 +70,7 @@
         <div class="meta-grid">
           <div><span>👤 Создал</span><b>{{ dname(r.creator) }}</b></div>
           <div><span>📅 Создана</span><b>{{ r.created_at.strftime('%d.%m.%Y %H:%M') }}</b></div>
-          <div><span>👤 Исполнитель</span><b>{{ r.assignee.full_name if r.assignee else "—" }}</b></div>
+          <div><span>👤 Исполнители</span><b>{{ r.assignees|map(attribute='full_name')|join(', ') if r.assignees else "—" }}</b></div>
           <div><span>⏰ Дедлайн</span><b style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y') if r.deadline else "—" }}</b></div>
           <div><span>🏷 Категория</span><b>{{ r.department.name }}</b></div>
           {% if r.subcategory %}<div><span>📂 Подкатегория</span><b>{{ r.subcategory.name }}</b></div>{% endif %}
@@ -183,6 +183,24 @@
         {% else %}
         <div><span style="color:#94a3b8">Филиал:</span> {{ r.branch or "—" }}</div>
         {% endif %}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="title">👷 Исполнители</div></div>
+      <div class="panel-body" style="font-size:14px">
+        {% for a in r.assignees %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+          <span>{{ a.full_name }}</span>
+          {% if user.role.value in ['admin','manager'] %}
+          <form method="post" action="/requests/{{ r.id }}/unassign/{{ a.id }}" style="margin:0"
+                onsubmit="return confirm('Снять «{{ a.full_name }}» с этой заявки?')">
+            <button type="submit" title="Снять" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px">✕</button>
+          </form>
+          {% endif %}
+        </div>
+        {% else %}
+        <p style="color:#94a3b8;margin:0">Не назначены</p>
+        {% endfor %}
       </div>
     </div>
     <div class="panel">

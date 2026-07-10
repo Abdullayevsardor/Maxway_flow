@@ -52,7 +52,7 @@
         <td data-label="Приоритет"><span class="tag {{ r.priority.value }}">{{ PRIORITY_LABELS[r.priority.value] }}</span></td>
         <td data-label="Категория">{{ r.department.name }}</td>
         <td data-label="Заказчик">{{ r.customer_name or "—" }}</td>
-        <td data-label="Исполнитель">{{ r.assignee.full_name if r.assignee else "—" }}</td>
+        <td data-label="Исполнитель">{{ r.assignees|map(attribute='full_name')|join(', ') if r.assignees else "—" }}</td>
         <td data-label="Дедлайн" style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y') if r.deadline else "—" }}</td>
       </tr>
       {% else %}

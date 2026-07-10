@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, ForeignKey, Boolean,
-    Enum as SAEnum
+    Table, Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
 
@@ -95,6 +95,14 @@ class User(Base):
         "Request", back_populates="assignee", foreign_keys="Request.assigned_to")
 
 
+# bir zayavkaga bir nechta ijrochi (many-to-many)
+request_assignees = Table(
+    "request_assignees", Base.metadata,
+    Column("request_id", Integer, ForeignKey("requests.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Request(Base):
     __tablename__ = "requests"
     id = Column(Integer, primary_key=True, index=True)
@@ -127,6 +135,7 @@ class Request(Base):
                            foreign_keys=[created_by])
     assignee = relationship("User", back_populates="assigned_requests",
                             foreign_keys=[assigned_to])
+    assignees = relationship("User", secondary="request_assignees")
     branch_obj = relationship("Branch")
     comments = relationship("Comment", back_populates="request",
                             cascade="all, delete-orphan",
