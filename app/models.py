@@ -27,7 +27,6 @@ class Status(str, enum.Enum):
     new = "new"                # Новая
     approved = "approved"      # Одобрена
     in_progress = "in_progress"  # В работе
-    on_check = "on_check"      # На проверке
     done = "done"              # Выполнена
     rejected = "rejected"      # Отклонена
 

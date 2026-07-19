@@ -20,7 +20,7 @@
   <a href="/requests?status=new" class="chip {{ 'active' if selected_status=='new' }}">Новые <span class="cbadge">{{ counts.new }}</span></a>
   <a href="/requests?status=approved" class="chip {{ 'active' if selected_status=='approved' }}">Одобрены <span class="cbadge">{{ counts.approved }}</span></a>
   <a href="/requests?status=in_progress" class="chip {{ 'active' if selected_status=='in_progress' }}">В работе <span class="cbadge">{{ counts.in_progress }}</span></a>
-  <a href="/requests?status=on_check" class="chip {{ 'active' if selected_status=='on_check' }}">На проверке <span class="cbadge">{{ counts.on_check }}</span></a>
+  <!-- <a href="/requests?status=on_check" class="chip {{ 'active' if selected_status=='on_check' }}">На проверке <span class="cbadge">{{ counts.on_check }}</span></a> -->
   <a href="/requests?status=done" class="chip {{ 'active' if selected_status=='done' }}">Выполнены <span class="cbadge">{{ counts.done }}</span></a>
   <a href="/requests?status=rejected" class="chip {{ 'active' if selected_status=='rejected' }}">Отклонены <span class="cbadge">{{ counts.rejected }}</span></a>
   <a href="/requests?status=overdue" class="chip {{ 'active' if selected_status=='overdue' }}" style="border-color:#fecaca;color:#dc2626">⏱ Просроченные <span class="cbadge" style="background:#fef2f2;color:#dc2626">{{ counts.overdue }}</span></a>

@@ -107,7 +107,7 @@ print(">>> [MAXWAY] ilova tayyor ✅", flush=True)
 
 STATUS_LABELS = {
     "new": "Новая", "approved": "Одобрена", "in_progress": "В работе",
-    "on_check": "На проверке", "done": "Выполнена", "rejected": "Отклонена",
+    "done": "Выполнена", "rejected": "Отклонена",
 }
 PRIORITY_LABELS = {"low": "Низкий", "medium": "Средний", "high": "Высокий"}
 ROLE_LABELS = {"admin": "АДМИН", "manager": "МЕНЕДЖЕР", "executor": "ИСПОЛНИТЕЛЬ", "client": "ЗАКАЗЧИК"}
