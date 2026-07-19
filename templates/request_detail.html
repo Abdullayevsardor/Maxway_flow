@@ -8,14 +8,15 @@
   <a href="/requests" class="btn btn-light">← Назад к заявкам</a>
   <div class="head-actions">
     {% if user.role.value in ['admin','manager'] %}
-    <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca" onclick="openModal('reject')">⊘ Отклонить</button>
-    <button class="btn btn-blue" onclick="openModal('assign')">＋ Назначить исполнителя</button>
-    {% endif %}
-    {% if user.role.value == 'admin' %}
-    <form method="post" action="/requests/{{ r.id }}/delete" style="display:inline"
-          onsubmit="return confirm('Заявкани butunlay o\'chirasizmi? Bu amalni qaytarib bo\'lmaydi.')">
-      <button type="submit" class="btn btn-light" style="color:#dc2626;border-color:#fecaca">🗑 Удалить</button>
+    <form method="post" action="/requests/{{ r.id }}/status" style="display:flex;gap:8px;align-items:center;margin:0">
+      <span style="font-size:13px;color:var(--muted)">Статус:</span>
+      <select name="status" onchange="this.form.submit()" class="inp">
+        {% for sv,sl in STATUS_LABELS.items() %}
+        <option value="{{ sv }}" {{ 'selected' if r.status.value==sv }}>{{ sl }}</option>
+        {% endfor %}
+      </select>
     </form>
+    <button class="btn btn-blue" onclick="openModal('assign')">＋ Назначить исполнителя</button>
     {% endif %}
   </div>
 </div>
@@ -76,17 +77,8 @@
           {% if r.subcategory %}<div><span>📂 Подкатегория</span><b>{{ r.subcategory.name }}</b></div>{% endif %}
           <div><span>🔄 Обновлена</span><b>{{ r.updated_at.strftime('%d.%m.%Y %H:%M') }}</b></div>
         </div>
-        <!-- status o'zgartirish -->
-        {% if user.role.value in ['admin','manager'] %}
-        <form method="post" action="/requests/{{ r.id }}/status" style="margin-top:16px;display:flex;gap:8px;align-items:center">
-          <span style="font-size:13px;color:var(--muted)">Статус:</span>
-          <select name="status" onchange="this.form.submit()" class="inp">
-            {% for sv,sl in STATUS_LABELS.items() %}
-            <option value="{{ sv }}" {{ 'selected' if r.status.value==sv }}>{{ sl }}</option>
-            {% endfor %}
-          </select>
-        </form>
-        {% elif user.role.value == 'executor' %}
+        <!-- ijrochi ish oqimi tugmalari -->
+        {% if user.role.value == 'executor' %}
         <div style="margin-top:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           {% if r.status.value == 'new' %}
           <form method="post" action="/requests/{{ r.id }}/status">
@@ -113,15 +105,26 @@
             placeholder="Опишите, как решена проблема..."></textarea>
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
             <label class="btn btn-light" style="margin:0;cursor:pointer">📷 Фото
-              <input type="file" name="photos" accept="image/*" multiple hidden onchange="solCnt(this,'solP')"></label>
+              <input type="file" name="photos" id="solPInp" accept="image/*" multiple hidden onchange="solCnt(this,'solP')"></label>
             <label class="btn btn-light" style="margin:0;cursor:pointer">🎬 Видео
-              <input type="file" name="videos" accept="video/*" multiple hidden onchange="solCnt(this,'solV')"></label>
+              <input type="file" name="videos" id="solVInp" accept="video/*" multiple hidden onchange="solCnt(this,'solV')"></label>
             <span id="solP" class="upload-cnt"></span><span id="solV" class="upload-cnt"></span>
           </div>
           <div style="text-align:right;margin-top:12px">
             <button type="submit" class="btn btn-blue">✅ Отправить решение</button>
           </div>
         </form>
+        {% endif %}
+        {% if user.role.value in ['admin','manager'] %}
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;border-top:1px solid var(--border);padding-top:14px">
+          <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca" onclick="openModal('reject')">⊘ Отклонить</button>
+          {% if user.role.value == 'admin' %}
+          <form method="post" action="/requests/{{ r.id }}/delete" style="margin:0"
+                onsubmit="return confirm('Заявкани butunlay o\'chirasizmi? Bu amalni qaytarib bo\'lmaydi.')">
+            <button type="submit" class="btn btn-light" style="color:#dc2626;border-color:#fecaca">🗑 Удалить</button>
+          </form>
+          {% endif %}
+        </div>
         {% endif %}
       </div>
     </div>
@@ -207,11 +210,15 @@
       <div class="panel-head"><div class="title">История статусов</div></div>
       <div class="panel-body">
         <div class="timeline">
+          {% set ns = namespace(prev=None) %}
           {% for h in r.history %}
+          {% if h.status.value != ns.prev %}
           <div class="tl-item">
             <span class="tl-dot {{ h.status.value }}"></span>
             <div><b>{{ STATUS_LABELS[h.status.value] }}</b><div style="color:#94a3b8;font-size:12px">{{ h.created_at.strftime('%d.%m.%Y %H:%M') }}</div></div>
           </div>
+          {% set ns.prev = h.status.value %}
+          {% endif %}
           {% else %}<p style="color:#94a3b8">Истории нет</p>{% endfor %}
         </div>
       </div>
@@ -258,7 +265,12 @@
 <script>
   function openModal(n){document.getElementById('modal-'+n).classList.add('open')}
   function closeModal(n){document.getElementById('modal-'+n).classList.remove('open')}
-  function solCnt(inp,id){const n=inp.files.length;document.getElementById(id).textContent=n?('✓ '+n):'';}
+  function solCnt(inp,id){
+    const n=inp.files.length;const el=document.getElementById(id);
+    if(n){el.innerHTML='✓ '+n+' <a href="#" onclick="clearSol(\''+inp.id+'\',\''+id+'\');return false" style="color:#dc2626;margin-left:6px;font-weight:600">✕</a>';}
+    else{el.textContent='';}
+  }
+  function clearSol(inpId,cntId){document.getElementById(inpId).value='';document.getElementById(cntId).textContent='';}
   document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
 </script>
 {% endblock %}

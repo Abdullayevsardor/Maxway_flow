@@ -94,7 +94,7 @@
           <div style="font-size:12px;color:#94a3b8">JPG, PNG — можно несколько</div>
         </div>
         <label class="btn btn-light" style="margin:0;cursor:pointer">Выбрать
-          <input type="file" name="photos" accept="image/*" multiple hidden onchange="showCnt(this,'photoCnt')"></label>
+          <input type="file" name="photos" id="photoInp" accept="image/*" multiple hidden onchange="showCnt(this,'photoCnt')"></label>
       </div>
       <div id="photoCnt" class="upload-cnt"></div>
 
@@ -105,7 +105,7 @@
           <div style="font-size:12px;color:#94a3b8">MP4, MOV — можно несколько</div>
         </div>
         <label class="btn btn-light" style="margin:0;cursor:pointer">Выбрать
-          <input type="file" name="videos" accept="video/*" multiple hidden onchange="showCnt(this,'videoCnt')"></label>
+          <input type="file" name="videos" id="videoInp" accept="video/*" multiple hidden onchange="showCnt(this,'videoCnt')"></label>
       </div>
       <div id="videoCnt" class="upload-cnt"></div>
       <div class="modal-actions">
@@ -132,7 +132,17 @@
   document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
   function showCnt(inp,id){
     const n=inp.files.length;
-    document.getElementById(id).textContent = n ? ('✓ Выбрано: '+n) : '';
+    const el=document.getElementById(id);
+    if(n){
+      el.innerHTML = '✓ Выбрано: '+n+
+        ' <a href="#" onclick="clearFile(\''+inp.id+'\',\''+id+'\');return false" '+
+        'style="color:#dc2626;margin-left:8px;font-weight:600">✕ Очистить</a>';
+    } else { el.textContent=''; }
+  }
+  function clearFile(inpId,cntId){
+    const inp=document.getElementById(inpId);
+    inp.value='';
+    document.getElementById(cntId).textContent='';
   }
   updateSubcats();
 </script>
