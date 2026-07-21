@@ -8,6 +8,14 @@
   <a href="/requests" class="btn btn-light">← Назад к заявкам</a>
   <div class="head-actions">
     {% if user.role.value in ['admin','manager'] %}
+      <form method="post" action="/requests/{{ r.id }}/status" style="display:flex;gap:8px;align-items:center;margin:0">
+        <span style="font-size:13px;color:var(--muted)">Статус:</span>
+        <select name="status" onchange="this.form.submit()" class="inp">
+          {% for sv,sl in STATUS_LABELS.items() %}
+          <option value="{{ sv }}" {{ 'selected' if r.status.value==sv }}>{{ sl }}</option>
+          {% endfor %}
+        </select>
+      </form>
       {% if r.status.value in ['new','rejected'] %}
       <form method="post" action="/requests/{{ r.id }}/status" style="margin:0">
         <input type="hidden" name="status" value="approved">
