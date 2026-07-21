@@ -8,15 +8,18 @@
   <a href="/requests" class="btn btn-light">← Назад к заявкам</a>
   <div class="head-actions">
     {% if user.role.value in ['admin','manager'] %}
-    <form method="post" action="/requests/{{ r.id }}/status" style="display:flex;gap:8px;align-items:center;margin:0">
-      <span style="font-size:13px;color:var(--muted)">Статус:</span>
-      <select name="status" onchange="this.form.submit()" class="inp">
-        {% for sv,sl in STATUS_LABELS.items() %}
-        <option value="{{ sv }}" {{ 'selected' if r.status.value==sv }}>{{ sl }}</option>
-        {% endfor %}
-      </select>
-    </form>
-    <button class="btn btn-blue" onclick="openModal('assign')">＋ Назначить исполнителя</button>
+      {% if r.status.value in ['new','rejected'] %}
+      <form method="post" action="/requests/{{ r.id }}/status" style="margin:0">
+        <input type="hidden" name="status" value="approved">
+        <button type="submit" class="btn" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">✓ Одобрить</button>
+      </form>
+      {% endif %}
+      {% if r.status.value in ['approved','in_progress'] %}
+      <button class="btn btn-blue" onclick="openModal('assign')">＋ Назначить исполнителя</button>
+      {% endif %}
+      {% if r.status.value not in ['rejected','done'] %}
+      <button class="btn" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca" onclick="openModal('reject')">⊘ Отклонить</button>
+      {% endif %}
     {% endif %}
   </div>
 </div>
@@ -81,10 +84,7 @@
         {% if user.role.value == 'executor' %}
         <div style="margin-top:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           {% if r.status.value == 'new' %}
-          <form method="post" action="/requests/{{ r.id }}/status">
-            <input type="hidden" name="status" value="approved">
-            <button type="submit" class="btn btn-blue">✓ Одобрить</button>
-          </form>
+          <span style="font-size:13px;color:var(--muted)">⏳ Ожидает одобрения администратора</span>
           {% elif r.status.value == 'approved' %}
           <form method="post" action="/requests/{{ r.id }}/status">
             <input type="hidden" name="status" value="in_progress">
@@ -94,6 +94,8 @@
           <span style="font-size:13px;color:var(--muted)">⬇ Завершите работу, отправив решение ниже</span>
           {% elif r.status.value == 'done' %}
           <span class="tag done">✓ Работа завершена</span>
+          {% elif r.status.value == 'rejected' %}
+          <span class="tag rejected">⊘ Отклонена</span>
           {% endif %}
         </div>
         {% endif %}
@@ -117,13 +119,10 @@
         {% endif %}
         {% if user.role.value in ['admin','manager'] %}
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;border-top:1px solid var(--border);padding-top:14px">
-          <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca" onclick="openModal('reject')">⊘ Отклонить</button>
-          {% if user.role.value == 'admin' %}
           <form method="post" action="/requests/{{ r.id }}/delete" style="margin:0"
                 onsubmit="return confirm('Заявкани butunlay o\'chirasizmi? Bu amalni qaytarib bo\'lmaydi.')">
             <button type="submit" class="btn btn-light" style="color:#dc2626;border-color:#fecaca">🗑 Удалить</button>
           </form>
-          {% endif %}
         </div>
         {% endif %}
       </div>

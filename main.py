@@ -77,6 +77,18 @@ def _admin_tools():
     ADMIN_RESET formati: "email:yangiparol"  (masalan: a.ruzikulov@gmail.com:12345678)"""
     try:
         db = SessionLocal()
+        # eski "На проверке" (on_check) zayavkalarni "В работе" (in_progress) ga o'tkazamiz
+        try:
+            n1 = db.query(models.Request).filter(models.Request.status == models.Status.on_check)\
+                .update({models.Request.status: models.Status.in_progress}, synchronize_session=False)
+            n2 = db.query(models.StatusHistory).filter(models.StatusHistory.status == models.Status.on_check)\
+                .update({models.StatusHistory.status: models.Status.in_progress}, synchronize_session=False)
+            if n1 or n2:
+                db.commit()
+                print(f">>> [MAXWAY] on_check ko'chirildi: zayavka={n1}, tarix={n2}", flush=True)
+        except Exception as e:
+            db.rollback()
+            print(">>> [MAXWAY] on_check migratsiya xato:", e, flush=True)
         admins = db.query(models.User).filter(models.User.role == models.Role.admin).all()
         print(">>> [MAXWAY] Adminlar:", flush=True)
         for a in admins:
@@ -107,7 +119,7 @@ print(">>> [MAXWAY] ilova tayyor ✅", flush=True)
 
 STATUS_LABELS = {
     "new": "Новая", "approved": "Одобрена", "in_progress": "В работе",
-    "on_check": "На проверке", "done": "Выполнена", "rejected": "Отклонена",
+    "done": "Выполнена", "rejected": "Отклонена",
 }
 PRIORITY_LABELS = {"low": "Низкий", "medium": "Средний", "high": "Высокий"}
 ROLE_LABELS = {"admin": "АДМИН", "manager": "МЕНЕДЖЕР", "executor": "ИСПОЛНИТЕЛЬ", "client": "ЗАКАЗЧИК"}
@@ -284,7 +296,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "new": q.filter(models.Request.status == Status.new).count(),
         "in_progress": q.filter(models.Request.status == Status.in_progress).count(),
         "done": q.filter(models.Request.status == Status.done).count(),
-        "unassigned": q.filter(~models.Request.assignees.any()).count(),
+        "unassigned": q.filter(~models.Request.assignees.any(),
+                               ~models.Request.status.in_([Status.done, Status.rejected])).count(),
         "departments": scoped_departments(db, user),
         "dep_counts": dep_counts,
         "recent": q.order_by(models.Request.created_at.desc()).limit(10).all(),
@@ -586,9 +599,9 @@ def reject_request(req_id: int, request: Request, reason: str = Form(""),
 
 @app.post("/requests/{req_id}/delete")
 def delete_request(req_id: int, request: Request, db: Session = Depends(get_db)):
-    """Заявкани butunlay o'chiradi — faqat admin."""
+    """Заявкани butunlay o'chiradi — admin yoki menejer."""
     user = current_user(request, db)
-    if not user or user.role != Role.admin:
+    if not user or user.role not in (Role.admin, Role.manager):
         return RedirectResponse("/login", 302)
     r = db.get(models.Request, req_id)
     if r:
