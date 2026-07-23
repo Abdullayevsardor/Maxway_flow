@@ -84,7 +84,8 @@
           {% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
         </select></div>
       {% endif %}
-      <div class="field"><label>Дедлайн</label><input type="date" name="deadline"></div>
+      <!-- <div class="field"><label>Дедлайн</label><input type="date" name="deadline"></div> -->
+      <div class="field"><label>Дедлайн</label><input type="date" name="deadline" style="cursor:pointer" onclick="this.showPicker && this.showPicker()"></div>
 
       <div class="upload-box">
         <div class="upload-ico">📷</div>
