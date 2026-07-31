@@ -5,7 +5,7 @@
   <div><h1>Филиал:  {{ user.full_name.split(' ')[0] }}</h1><p>Обзор текущего состояния системы</p></div>
   <!-- <div class="head-actions">
     <a href="/dashboard" class="btn btn-light">⟳ Обновить</a>
-    {% if user.role.value != 'executor' %}
+    {% if user.role.value in ['admin','manager','client'] %}
     <a href="/requests" class="btn btn-blue">＋ Создать заявку</a>
     {% endif %}
   </div> -->

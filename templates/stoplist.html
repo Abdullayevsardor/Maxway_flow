@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Стоп-лист{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div><h1>🛑 Стоп-лист</h1>
+    <p>{% if is_client %}Отметьте блюда, которых нет в наличии{% else %}Блюда на стопе по филиалам{% endif %}</p></div>
+</div>
+
+{% if is_client %}
+<div class="panel">
+  <div class="panel-head"><div class="title">Добавить в стоп-лист</div></div>
+  <div class="panel-body">
+    {% if menu_items %}
+    <form method="post" action="/stoplist/add">
+      <div class="field"><label>Блюдо (меню)</label>
+        <select name="menu_item_id" class="inp" required
+                onchange="document.getElementById('reasonBox').style.display=this.value?'block':'none'">
+          <option value="">— выберите блюдо —</option>
+          {% for m in menu_items %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div id="reasonBox" style="display:none">
+        <div class="field"><label>Причина</label>
+          <select name="reason" class="inp" required>
+            <option value="">— выберите причину —</option>
+            {% for rk, rl in REASON_LABELS.items() %}<option value="{{ rk }}">{{ rl }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field"><label>Комментарий <span style="color:#94a3b8;font-weight:400">(необязательно)</span></label>
+          <textarea name="comment" class="inp" style="width:100%;min-height:60px;padding:10px" placeholder="Дополнительно..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-blue">＋ Добавить в стоп-лист</button>
+      </div>
+    </form>
+    {% else %}
+    <p style="color:#94a3b8;margin:0">Меню пока пусто. Обратитесь к администратору, чтобы добавить блюда.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <div class="panel-head"><div class="title">
+    {% if is_client %}Мой стоп-лист{% else %}Стоп-лист · все филиалы{% endif %}
+    <span class="badge">{{ entries|length }}</span></div></div>
+  <div class="panel-body">
+    {% if entries %}
+    <table>
+      <thead><tr>
+        {% if not is_client %}<th>ФИЛИАЛ</th>{% endif %}
+        <th>БЛЮДО</th><th>ПРИЧИНА</th><th>КОММЕНТАРИЙ</th><th>КОГДА</th>{% if can_resolve %}<th></th>{% endif %}
+      </tr></thead>
+      <tbody>
+        {% for e in entries %}
+        <tr>
+          {% if not is_client %}<td data-label="Филиал">{{ e.branch.name if e.branch else "—" }}</td>{% endif %}
+          <td data-label="Блюдо"><b>{{ e.menu_item.name if e.menu_item else "—" }}</b></td>
+          <td data-label="Причина"><span class="tag" style="background:#fef3c7;color:#b45309">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
+          <td data-label="Комментарий">{{ e.comment or "—" }}</td>
+          <td data-label="Когда" style="color:#94a3b8;font-size:13px">{{ e.created_at.strftime('%d.%m %H:%M') }}</td>
+          {% if can_resolve %}
+          <td>
+            <form method="post" action="/stoplist/{{ e.id }}/resolve" style="margin:0"
+                  onsubmit="return confirm('Убрать из стоп-листа?')">
+              <button type="submit" class="btn btn-light" style="color:#16a34a;border-color:#86efac">✓ Убрать</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:#94a3b8;margin:0">Стоп-лист пуст 🎉</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if can_manage_menu %}
+<div class="panel">
+  <div class="panel-head"><div class="title">Меню для стоп-листа <span class="badge">{{ menu_items|length }}</span></div></div>
+  <div class="panel-body">
+    <form method="post" action="/stoplist/menu/add" style="margin-bottom:14px">
+      <div class="field"><label>Добавить блюда <span style="color:#94a3b8;font-weight:400">(каждое с новой строки)</span></label>
+        <textarea name="name" class="inp" style="width:100%;min-height:70px;padding:10px" placeholder="Лаваш&#10;Кола 0.5&#10;Картофель фри"></textarea>
+      </div>
+      <button type="submit" class="btn btn-blue">＋ Добавить в меню</button>
+    </form>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      {% for m in menu_items %}
+      <span class="tag" style="background:#f1f5f9;color:#334155;display:inline-flex;align-items:center;gap:6px">
+        {{ m.name }}
+        <form method="post" action="/stoplist/menu/{{ m.id }}/delete" style="margin:0"
+              onsubmit="return confirm('Удалить «{{ m.name }}» из меню?')">
+          <button type="submit" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:14px">✕</button>
+        </form>
+      </span>
+      {% else %}
+      <span style="color:#94a3b8">Меню пусто — добавьте блюда выше.</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

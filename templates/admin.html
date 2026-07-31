@@ -107,7 +107,7 @@
       </div>
       <div style="display:flex;gap:12px">
         <div class="field" style="flex:1"><label>Роль</label>
-          <select name="role"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="client">Заказчик</option></select></div>
+          <select name="role"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="viewer">Просмотр</option><option value="client">Заказчик</option></select></div>
         <div class="field" style="flex:1"><label>Категория</label>
           <select name="department_id"><option value="">— нет —</option>
             {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
@@ -134,7 +134,7 @@
       <div style="display:flex;gap:12px">
         <div class="field" style="flex:1"><label>Телефон</label><input type="text" name="phone" id="u_phone"></div>
         <div class="field" style="flex:1"><label>Роль</label>
-          <select name="role" id="u_role"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="client">Заказчик</option></select></div>
+          <select name="role" id="u_role"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="viewer">Просмотр</option><option value="client">Заказчик</option></select></div>
       </div>
       <div class="field"><label>Telegram chat ID (для уведомлений бота)</label>
         <input type="text" name="telegram_chat_id" id="u_telegram_chat_id" placeholder="напр. 123456789"></div>

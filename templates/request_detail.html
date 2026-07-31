@@ -155,12 +155,14 @@
         {% else %}
         <p style="color:#94a3b8">Комментариев нет</p>
         {% endfor %}
+        {% if user.role.value != 'viewer' %}
         <form method="post" action="/requests/{{ r.id }}/comment" style="margin-top:16px">
           <textarea name="text" class="inp" style="width:100%;min-height:70px;padding:12px" placeholder="Напишите комментарий..." required></textarea>
           <div style="text-align:right;margin-top:10px">
             <button type="submit" class="btn btn-blue">➤ Отправить</button>
           </div>
         </form>
+        {% endif %}
       </div>
     </div>
   </div>

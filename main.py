@@ -122,11 +122,20 @@ STATUS_LABELS = {
     "done": "Выполнена", "rejected": "Отклонена",
 }
 PRIORITY_LABELS = {"low": "Низкий", "medium": "Средний", "high": "Высокий"}
-ROLE_LABELS = {"admin": "АДМИН", "manager": "МЕНЕДЖЕР", "executor": "ИСПОЛНИТЕЛЬ", "client": "ЗАКАЗЧИК"}
+ROLE_LABELS = {"admin": "АДМИН", "manager": "МЕНЕДЖЕР", "executor": "ИСПОЛНИТЕЛЬ", "client": "ЗАКАЗЧИК", "viewer": "ПРОСМОТР"}
+# Stop-list sabablari
+REASON_LABELS = {
+    "sales_growth": "Рост продаж",
+    "wrong_forecast": "Неправильный прогноз продаж",
+    "supplier_late": "Поставщик опоздал",
+    "supplier_stop": "На стопе у поставщика",
+    "branch_no_order": "Не заказал филиал",
+    "tech_problem": "Технический проблема",
+}
 
 templates.env.globals.update(
     STATUS_LABELS=STATUS_LABELS, PRIORITY_LABELS=PRIORITY_LABELS,
-    ROLE_LABELS=ROLE_LABELS, APP_NAME="MAXWAY", now=datetime.utcnow,
+    ROLE_LABELS=ROLE_LABELS, REASON_LABELS=REASON_LABELS, APP_NAME="MAXWAY", now=datetime.utcnow,
 )
 
 
@@ -241,7 +250,7 @@ def login_submit(request: Request, email: str = Form(...), password: str = Form(
             {"request": request, "error": "Неверный email или пароль"}, status_code=401)
     token = auth.create_access_token(user.id)
     resp = RedirectResponse("/dashboard", 302)
-    resp.set_cookie(auth.COOKIE_NAME, token, httponly=True, max_age=604800)
+    resp.set_cookie(auth.COOKIE_NAME, token, httponly=True, max_age=7200)
     return resp
 
 
@@ -268,7 +277,7 @@ def register_submit(request: Request, full_name: str = Form(...), email: str = F
     db.add(user); db.commit(); db.refresh(user)
     token = auth.create_access_token(user.id)
     resp = RedirectResponse("/dashboard", 302)
-    resp.set_cookie(auth.COOKIE_NAME, token, httponly=True, max_age=604800)
+    resp.set_cookie(auth.COOKIE_NAME, token, httponly=True, max_age=7200)
     return resp
 
 
@@ -385,7 +394,7 @@ def create_request(request: Request, title: str = Form(...), description: str = 
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
-    if user.role == Role.executor:
+    if user.role in (Role.executor, Role.viewer):
         return RedirectResponse("/requests", 302)
     dl = None
     if deadline:
@@ -451,9 +460,10 @@ def notify_category(db: Session, r: models.Request):
     recipients = db.query(models.User).filter(
         models.User.is_active == True,
         models.User.id != r.created_by,
-        models.User.role.in_([Role.executor, Role.manager, Role.admin]),
+        models.User.role.in_([Role.executor, Role.manager, Role.admin, Role.viewer]),
         ((models.User.department_id == r.department_id)
-         | ((models.User.role == Role.admin) & (models.User.department_id.is_(None))))
+         | ((models.User.role == Role.admin) & (models.User.department_id.is_(None)))
+         | (models.User.role == Role.viewer))
     ).all()
     seen = set()
     link = f"/requests/{r.id}"
@@ -650,7 +660,7 @@ def change_status(req_id: int, request: Request, status: str = Form(...),
 def add_comment(req_id: int, request: Request, text: str = Form(...),
                 db: Session = Depends(get_db)):
     user = current_user(request, db)
-    if not user:
+    if not user or user.role == Role.viewer:
         return RedirectResponse("/login", 302)
     r = db.get(models.Request, req_id)
     if r and text.strip():
@@ -1223,3 +1233,98 @@ def api_requests(department_id: Optional[int] = None, db: Session = Depends(get_
              "department": r.department.name if r.department else None,
              "assignee": ", ".join(a.full_name for a in r.assignees) if r.assignees else None}
             for r in q.order_by(models.Request.created_at.desc()).all()]
+
+
+# ===================== STOP-LIST =====================
+def is_supply(user):
+    """Foydalanuvchi Снабжение bo'limidami?"""
+    return user.department is not None and "набжен" in (user.department.name or "").lower()
+
+
+def can_see_stoplist(user):
+    return user.role == Role.client or is_supply(user) or \
+        user.role in (Role.admin, Role.manager, Role.viewer)
+
+
+@app.get("/stoplist", response_class=HTMLResponse)
+def stoplist_page(request: Request, db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    if not can_see_stoplist(user):
+        return RedirectResponse("/dashboard", 302)
+    menu_items = db.query(models.MenuItem).filter(models.MenuItem.is_active == True)\
+        .order_by(models.MenuItem.name).all()
+    q = db.query(models.StopEntry).filter(models.StopEntry.resolved == False)
+    is_client = user.role == Role.client
+    if is_client:
+        q = q.filter(models.StopEntry.branch_id == user.user_branch_id)
+    entries = q.order_by(models.StopEntry.created_at.desc()).all()
+    return templates.TemplateResponse(request, "stoplist.html", {
+        "request": request, "user": user, "active": "stoplist",
+        "menu_items": menu_items, "entries": entries, "is_client": is_client,
+        "can_manage_menu": user.role == Role.admin,
+        "can_resolve": user.role in (Role.admin, Role.manager) or is_supply(user) or is_client,
+    })
+
+
+@app.post("/stoplist/add")
+def stoplist_add(request: Request, menu_item_id: int = Form(...),
+                 reason: str = Form(...), comment: str = Form(""),
+                 db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user or user.role != Role.client or not user.user_branch_id:
+        return RedirectResponse("/login", 302)
+    if reason not in REASON_LABELS:
+        return RedirectResponse("/stoplist", 302)
+    # xuddi shu taom shu filialda ochiq stopda bo'lsa — takrorlamaymiz
+    exists = db.query(models.StopEntry).filter(
+        models.StopEntry.branch_id == user.user_branch_id,
+        models.StopEntry.menu_item_id == menu_item_id,
+        models.StopEntry.resolved == False).first()
+    if not exists:
+        db.add(models.StopEntry(branch_id=user.user_branch_id, menu_item_id=menu_item_id,
+               reason=reason, comment=comment.strip(), created_by=user.id))
+        db.commit()
+    return RedirectResponse("/stoplist", 302)
+
+
+@app.post("/stoplist/{sid}/resolve")
+def stoplist_resolve(sid: int, request: Request, db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    e = db.get(models.StopEntry, sid)
+    if e:
+        # klient faqat o'z filialini, aks holda snabjenie/admin/menejer
+        ok = (user.role == Role.client and e.branch_id == user.user_branch_id) \
+            or user.role in (Role.admin, Role.manager) or is_supply(user)
+        if ok:
+            e.resolved = True
+            db.commit()
+    return RedirectResponse("/stoplist", 302)
+
+
+@app.post("/stoplist/menu/add")
+def stoplist_menu_add(request: Request, name: str = Form(...), db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user or user.role != Role.admin:
+        return RedirectResponse("/login", 302)
+    for line in name.splitlines():
+        nm = line.strip()
+        if nm and not db.query(models.MenuItem).filter(models.MenuItem.name == nm).first():
+            db.add(models.MenuItem(name=nm))
+    db.commit()
+    return RedirectResponse("/stoplist", 302)
+
+
+@app.post("/stoplist/menu/{mid}/delete")
+def stoplist_menu_delete(mid: int, request: Request, db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user or user.role != Role.admin:
+        return RedirectResponse("/login", 302)
+    m = db.get(models.MenuItem, mid)
+    if m:
+        db.query(models.StopEntry).filter(models.StopEntry.menu_item_id == mid).delete()
+        db.delete(m); db.commit()
+    return RedirectResponse("/stoplist", 302)

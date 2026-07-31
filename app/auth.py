@@ -16,7 +16,7 @@ from . import models
 
 SECRET_KEY = os.environ.get("MAXWAY_SECRET", "MAXWAY-secret-key-uni-productionda-ozgartiring-2026")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 kun
+ACCESS_TOKEN_EXPIRE_MINUTES = 120  # 2 soat
 COOKIE_NAME = "maxway_token"
 
 # Parolni hashlash — Python'ning standart hashlib kutubxonasi (PBKDF2-SHA256).

@@ -21,6 +21,7 @@ class Role(str, enum.Enum):
     manager = "manager"
     executor = "executor"
     client = "client"          # filial foydalanuvchisi
+    viewer = "viewer"          # kuzatuvchi — hamma bo'limni ko'radi (faqat o'qish)
 
 
 class Status(str, enum.Enum):
@@ -210,3 +211,29 @@ class Notification(Base):
     link = Column(String(255), default="")
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=tashkent_now)
+
+
+class MenuItem(Base):
+    """Menyu taomi (qo'lda kiritiladi yoki iiko'dan sinxron). Stop-list uchun."""
+    __tablename__ = "menu_items"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    ext_id = Column(String(120), nullable=True)      # iiko nomenklatura ID (kelajakda sync uchun)
+    is_active = Column(Boolean, default=True)
+
+
+class StopEntry(Base):
+    """Filial stop-listi: qaysi taom, qaysi filialda to'xtatilgan va sababi."""
+    __tablename__ = "stop_entries"
+    id = Column(Integer, primary_key=True, index=True)
+    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="CASCADE"), nullable=False)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False)
+    reason = Column(String(40), nullable=False)       # sabab kaliti
+    comment = Column(Text, default="")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=tashkent_now)
+    resolved = Column(Boolean, default=False)
+
+    branch = relationship("Branch")
+    menu_item = relationship("MenuItem")
+    creator = relationship("User", foreign_keys=[created_by])
