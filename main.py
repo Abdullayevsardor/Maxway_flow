@@ -1392,13 +1392,13 @@ def sync_iiko_menu(db):
     if not api_login:
         return False, "iiko sozlanmagan (IIKO_API_LOGIN)"
     try:
-        # 1) access token — /api/v2/access_token clientId+clientSecret so'raydi (OAuth2)
+        # 1) access token — /api/v2/access_token body'da apiKey kutadi
         token_path = os.environ.get("IIKO_TOKEN_PATH", "/api/v2/access_token")
-        client_id = os.environ.get("IIKO_CLIENT_ID", "").strip()
-        client_secret = os.environ.get("IIKO_CLIENT_SECRET", "").strip() or api_login
-        auth_body = {"clientSecret": client_secret}
-        if client_id:
-            auth_body["clientId"] = client_id
+        api_key = os.environ.get("IIKO_CLIENT_SECRET", "").strip() or api_login
+        auth_body = {"apiKey": api_key}
+        cid = os.environ.get("IIKO_CLIENT_ID", "").strip()
+        if cid:
+            auth_body["clientId"] = cid
         tok_resp = _iiko_post(base, token_path, None, auth_body)
         tok = tok_resp.get("token") or tok_resp.get("access_token") or tok_resp.get("accessToken")
         if not tok:
