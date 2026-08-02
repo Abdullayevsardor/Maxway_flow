@@ -4,6 +4,7 @@ import json
 import hashlib
 import urllib.request
 import urllib.parse
+import urllib.error
 from datetime import datetime, timedelta
 from typing import Optional, List
 
@@ -1367,68 +1368,85 @@ def stoplist_menu_delete(mid: int, request: Request, db: Session = Depends(get_d
     return RedirectResponse("/stoplist", 302)
 
 
-# ===================== iiko MENYU SYNC (iikoServer) =====================
-def _iiko_get(url, timeout=20):
-    req = urllib.request.Request(url, headers={"User-Agent": "MAXWAY"})
+# ===================== iiko MENYU SYNC (iikoCloud / Transport API) =====================
+def _iiko_post(base, path, token, payload, timeout=40):
+    data = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(base + path, data=data, headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", "replace")
+        return json.loads(r.read().decode("utf-8", "replace"))
 
 
 def sync_iiko_menu(db):
-    """iikoServer nomenklaturasidan (products) menyuni menu_items ga tortadi.
-    Env: IIKO_HOST (https://host:port), IIKO_LOGIN, IIKO_PASS, IIKO_TYPES (ixtiyoriy, standart DISH).
+    """iikoCloud (api-ru.iiko.services) nomenklaturasidan menyuni menu_items ga tortadi.
+    Env: IIKO_API_LOGIN (API kalit), IIKO_HOST (ixtiyoriy, standart api-ru.iiko.services),
+    IIKO_ORG_ID (ixtiyoriy — bo'sh bo'lsa barcha organizatsiyalar), IIKO_TYPES (standart 'dish,good').
     Qaytaradi: (ok: bool, xabar: str)."""
-    host = os.environ.get("IIKO_HOST", "").rstrip("/")
-    login = os.environ.get("IIKO_LOGIN", "")
-    pw = os.environ.get("IIKO_PASS", "")
-    types = {t.strip().upper() for t in os.environ.get("IIKO_TYPES", "DISH").split(",") if t.strip()}
-    if not (host and login and pw):
-        return False, "iiko sozlanmagan (IIKO_HOST/IIKO_LOGIN/IIKO_PASS)"
-    token = None
+    api_login = os.environ.get("IIKO_API_LOGIN", "").strip()
+    base = os.environ.get("IIKO_HOST", "https://api-ru.iiko.services").rstrip("/")
+    org_env = os.environ.get("IIKO_ORG_ID", "").strip()
+    types = {t.strip().lower() for t in os.environ.get("IIKO_TYPES", "dish,good").split(",") if t.strip()}
+    if not api_login:
+        return False, "iiko sozlanmagan (IIKO_API_LOGIN)"
     try:
-        # 1) auth: pass = SHA1(parol)
-        pass_hash = hashlib.sha1(pw.encode()).hexdigest()
-        token = _iiko_get(f"{host}/resto/api/auth?login={urllib.parse.quote(login)}"
-                          f"&pass={pass_hash}").strip().strip('"')
-        if not token:
-            return False, "iiko auth: token olinmadi"
-        # 2) products
-        raw = _iiko_get(f"{host}/resto/api/v2/entities/products/list?key={token}"
-                        f"&includeDeleted=false")
-        products = json.loads(raw)
-        seen = set()
+        # 1) access token
+        tok = _iiko_post(base, "/api/1/access_token", None, {"apiLogin": api_login}).get("token")
+        if not tok:
+            return False, "iiko: token olinmadi (API kalitni tekshiring)"
+        # 2) organizatsiyalar
+        if org_env:
+            org_ids = [o.strip() for o in org_env.split(",") if o.strip()]
+        else:
+            orgs = _iiko_post(base, "/api/1/organizations", tok,
+                              {"returnAdditionalInfo": False, "includeDisabled": False})
+            org_ids = [o["id"] for o in orgs.get("organizations", [])]
+        if not org_ids:
+            return False, "iiko: organizatsiya topilmadi"
+        # 3) har org nomenklaturasi — nomlarni yig'amiz (umumiy menyu)
+        names = {}  # name -> ext_id
+        for oid in org_ids:
+            nom = _iiko_post(base, "/api/1/nomenclature", tok, {"organizationId": oid})
+            for p in nom.get("products", []):
+                if p.get("isDeleted"):
+                    continue
+                if types and (p.get("type") or "").lower() not in types:
+                    continue
+                nm = (p.get("name") or "").strip()
+                if nm and nm not in names:
+                    names[nm] = str(p.get("id") or "")
+        # 4) menu_items ga yozamiz (nom bo'yicha)
         added = updated = 0
-        for p in products:
-            if p.get("deleted"):
-                continue
-            if types and (p.get("type") or "").upper() not in types:
-                continue
-            ext = str(p.get("id") or "")
-            name = (p.get("name") or "").strip()
-            if not name:
-                continue
-            seen.add(ext)
-            row = db.query(models.MenuItem).filter(models.MenuItem.ext_id == ext).first() if ext else None
+        for nm, ext in names.items():
+            row = db.query(models.MenuItem).filter(models.MenuItem.name == nm).first()
             if row:
-                row.name = name; row.is_active = True; updated += 1
+                row.is_active = True
+                if ext:
+                    row.ext_id = ext
+                updated += 1
             else:
-                db.add(models.MenuItem(name=name, ext_id=ext, is_active=True)); added += 1
-        # iikoda yo'q bo'lib qolganlarni (ext_id li) yashiramiz
+                db.add(models.MenuItem(name=nm, ext_id=ext or "iiko", is_active=True))
+                added += 1
+        # 5) iiko'dan yo'qolganlarni (ext_id li) yashiramiz
         hidden = 0
         for row in db.query(models.MenuItem).filter(models.MenuItem.ext_id.isnot(None)).all():
-            if row.ext_id not in seen and row.is_active:
-                row.is_active = False; hidden += 1
+            if row.name not in names and row.is_active:
+                row.is_active = False
+                hidden += 1
         db.commit()
-        return True, f"Синхронизировано: +{added}, обновлено {updated}, скрыто {hidden}"
+        return True, (f"Синхронизировано: +{added}, обновлено {updated}, "
+                      f"скрыто {hidden} (организаций: {len(org_ids)})")
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", "replace")[:250]
+        except Exception:
+            body = ""
+        db.rollback()
+        return False, f"iiko HTTP {e.code}: {body}"
     except Exception as e:
         db.rollback()
         return False, f"iiko xato: {e}"
-    finally:
-        if token:
-            try:
-                _iiko_get(f"{host}/resto/api/logout?key={token}", timeout=8)
-            except Exception:
-                pass
 
 
 @app.post("/stoplist/sync")
