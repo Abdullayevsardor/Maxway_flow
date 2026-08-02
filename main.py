@@ -650,6 +650,9 @@ def delete_request(req_id: int, request: Request, db: Session = Depends(get_db))
                     os.remove(fp)
             except Exception:
                 pass
+        # shu zayavkaga tegishli bildirishnomalarni o'chiramiz (link orqali bog'langan)
+        db.query(models.Notification).filter(
+            models.Notification.link == f"/requests/{req_id}").delete(synchronize_session=False)
         db.delete(r)   # comments/history/attachments cascade bilan o'chadi
         db.commit()
     return RedirectResponse("/requests", 302)
@@ -991,6 +994,8 @@ def departments_delete(dep_id: int, request: Request, db: Session = Depends(get_
         db.query(models.User).filter(models.User.department_id == dep_id)\
             .update({models.User.department_id: None}, synchronize_session=False)
         for r in db.query(models.Request).filter(models.Request.department_id == dep_id).all():
+            db.query(models.Notification).filter(
+                models.Notification.link == f"/requests/{r.id}").delete(synchronize_session=False)
             db.delete(r)
         db.delete(d); db.commit()
     return RedirectResponse("/departments", 302)
@@ -1059,6 +1064,8 @@ def admin_user_delete(uid: int, request: Request, db: Session = Depends(get_db))
                         os.remove(fp)
                 except Exception:
                     pass
+            db.query(models.Notification).filter(
+                models.Notification.link == f"/requests/{r.id}").delete(synchronize_session=False)
             db.delete(r)
         # bu odamning izohlari va bildirishnomalarini o'chiramiz
         db.query(models.Comment).filter(models.Comment.user_id == uid)\
@@ -1135,6 +1142,8 @@ def admin_cat_delete(dep_id: int, request: Request, db: Session = Depends(get_db
                         os.remove(fp)
                 except Exception:
                     pass
+            db.query(models.Notification).filter(
+                models.Notification.link == f"/requests/{r.id}").delete(synchronize_session=False)
             db.delete(r)
         db.delete(d); db.commit()
     return RedirectResponse("/admin", 302)
