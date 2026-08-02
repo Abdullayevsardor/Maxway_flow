@@ -1392,10 +1392,10 @@ def sync_iiko_menu(db):
     if not api_login:
         return False, "iiko sozlanmagan (IIKO_API_LOGIN)"
     try:
-        # 1) access token — /api/v2/access_token body'da apiKey kutadi
+        # 1) access token — endpoint apiKey VA clientSecret ikkalasini so'raydi
         token_path = os.environ.get("IIKO_TOKEN_PATH", "/api/v2/access_token")
         api_key = os.environ.get("IIKO_CLIENT_SECRET", "").strip() or api_login
-        auth_body = {"apiKey": api_key}
+        auth_body = {"apiKey": api_key, "clientSecret": api_key}
         cid = os.environ.get("IIKO_CLIENT_ID", "").strip()
         if cid:
             auth_body["clientId"] = cid
