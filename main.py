@@ -1387,7 +1387,8 @@ def sync_iiko_menu(db):
     api_login = os.environ.get("IIKO_API_LOGIN", "").strip()
     base = os.environ.get("IIKO_HOST", "https://api-ru.iiko.services").rstrip("/")
     org_env = os.environ.get("IIKO_ORG_ID", "").strip()
-    types = {t.strip().lower() for t in os.environ.get("IIKO_TYPES", "dish,good").split(",") if t.strip()}
+    # standart: filtr yo'q (hamma taom). IIKO_TYPES berilsa — faqat o'shalar.
+    types = {t.strip().lower() for t in os.environ.get("IIKO_TYPES", "").split(",") if t.strip()}
     if not api_login:
         return False, "iiko sozlanmagan (IIKO_API_LOGIN)"
     try:
@@ -1402,20 +1403,29 @@ def sync_iiko_menu(db):
             orgs = _iiko_post(base, "/api/1/organizations", tok,
                               {"returnAdditionalInfo": False, "includeDisabled": False})
             org_ids = [o["id"] for o in orgs.get("organizations", [])]
+        print(f">>> [MAXWAY] iiko: organizatsiya = {len(org_ids)}", flush=True)
         if not org_ids:
             return False, "iiko: organizatsiya topilmadi"
         # 3) har org nomenklaturasi — nomlarni yig'amiz (umumiy menyu)
         names = {}  # name -> ext_id
+        total_products = 0
+        seen_types = set()
         for oid in org_ids:
             nom = _iiko_post(base, "/api/1/nomenclature", tok, {"organizationId": oid})
-            for p in nom.get("products", []):
+            prods = nom.get("products", [])
+            total_products += len(prods)
+            for p in prods:
                 if p.get("isDeleted"):
                     continue
-                if types and (p.get("type") or "").lower() not in types:
+                ptype = (p.get("type") or "").lower()
+                seen_types.add(ptype)
+                if types and ptype not in types:
                     continue
                 nm = (p.get("name") or "").strip()
                 if nm and nm not in names:
                     names[nm] = str(p.get("id") or "")
+        print(f">>> [MAXWAY] iiko: jami mahsulot={total_products}, "
+              f"turlar={seen_types}, tanlangan nom={len(names)}", flush=True)
         # 4) menu_items ga yozamiz (nom bo'yicha)
         added = updated = 0
         for nm, ext in names.items():
@@ -1435,8 +1445,8 @@ def sync_iiko_menu(db):
                 row.is_active = False
                 hidden += 1
         db.commit()
-        return True, (f"Синхронизировано: +{added}, обновлено {updated}, "
-                      f"скрыто {hidden} (организаций: {len(org_ids)})")
+        return True, (f"Товаров получено: {total_products} · добавлено +{added}, "
+                      f"обновлено {updated}, скрыто {hidden} (организаций: {len(org_ids)})")
     except urllib.error.HTTPError as e:
         try:
             body = e.read().decode("utf-8", "replace")[:250]
@@ -1455,4 +1465,5 @@ def stoplist_sync(request: Request, db: Session = Depends(get_db)):
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
     ok, msg = sync_iiko_menu(db)
+    print(f">>> [MAXWAY] iiko sync natija: ok={ok} | {msg}", flush=True)
     return RedirectResponse(f"/stoplist?sync={urllib.parse.quote(msg)}", 302)
