@@ -1392,10 +1392,12 @@ def sync_iiko_menu(db):
     if not api_login:
         return False, "iiko sozlanmagan (IIKO_API_LOGIN)"
     try:
-        # 1) access token
-        tok = _iiko_post(base, "/api/1/access_token", None, {"apiLogin": api_login}).get("token")
+        # 1) access token — bu kalit /api/v2/access_token ni talab qiladi
+        token_path = os.environ.get("IIKO_TOKEN_PATH", "/api/v2/access_token")
+        tok_resp = _iiko_post(base, token_path, None, {"apiLogin": api_login})
+        tok = tok_resp.get("token") or tok_resp.get("access_token") or tok_resp.get("accessToken")
         if not tok:
-            return False, "iiko: token olinmadi (API kalitni tekshiring)"
+            return False, f"iiko: token olinmadi (javob: {str(tok_resp)[:150]})"
         # 2) organizatsiyalar
         if org_env:
             org_ids = [o.strip() for o in org_env.split(",") if o.strip()]
