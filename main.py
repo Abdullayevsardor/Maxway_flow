@@ -1,6 +1,7 @@
 """MAXWAY — ishlarni saqlash va ijrochilarga yo'naltirish tizimi (FastAPI)."""
 import os
 import json
+import hashlib
 import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta
@@ -49,6 +50,32 @@ def _ensure_columns():
 print(">>> [MAXWAY] ensure_columns boshlandi", flush=True)
 _ensure_columns()
 print(">>> [MAXWAY] ensure_columns tugadi", flush=True)
+
+
+def _ensure_enum_values():
+    """Postgres 'role' enum turiga yangi qiymatlarni (viewer) qo'shadi.
+    Python enumga qiymat qo'shilsa, PG enum turi avtomatik yangilanmaydi."""
+    try:
+        if "postgres" not in str(engine.url):
+            return  # SQLite'da enum matn sifatida — kerak emas
+        from sqlalchemy import text
+        conn = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+        try:
+            row = conn.execute(text(
+                "SELECT t.typname FROM pg_type t JOIN pg_enum e ON e.enumtypid=t.oid "
+                "WHERE e.enumlabel='executor' LIMIT 1")).first()
+            if row:
+                tname = row[0]
+                for val in ("viewer",):
+                    conn.execute(text(f"ALTER TYPE {tname} ADD VALUE IF NOT EXISTS '{val}'"))
+                print(f">>> [MAXWAY] enum '{tname}' ga viewer qo'shildi", flush=True)
+        finally:
+            conn.close()
+    except Exception as e:
+        print(">>> [MAXWAY] enum migratsiya xato:", e, flush=True)
+
+
+_ensure_enum_values()
 
 
 def _auto_seed():
@@ -1242,12 +1269,12 @@ def is_supply(user):
 
 
 def can_see_stoplist(user):
-    return user.role == Role.client or is_supply(user) or \
-        user.role in (Role.admin, Role.manager, Role.viewer)
+    # faqat Снабжение bo'limi, filial direktorlari, admin (menyu boshqaruvi) va viewer (kuzatuv)
+    return user.role in (Role.client, Role.admin, Role.viewer) or is_supply(user)
 
 
 @app.get("/stoplist", response_class=HTMLResponse)
-def stoplist_page(request: Request, db: Session = Depends(get_db)):
+def stoplist_page(request: Request, sync: str = "", db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
@@ -1265,6 +1292,7 @@ def stoplist_page(request: Request, db: Session = Depends(get_db)):
         "menu_items": menu_items, "entries": entries, "is_client": is_client,
         "can_manage_menu": user.role == Role.admin,
         "can_resolve": user.role in (Role.admin, Role.manager) or is_supply(user) or is_client,
+        "iiko_on": bool(os.environ.get("IIKO_HOST")), "sync_msg": sync,
     })
 
 
@@ -1328,3 +1356,76 @@ def stoplist_menu_delete(mid: int, request: Request, db: Session = Depends(get_d
         db.query(models.StopEntry).filter(models.StopEntry.menu_item_id == mid).delete()
         db.delete(m); db.commit()
     return RedirectResponse("/stoplist", 302)
+
+
+# ===================== iiko MENYU SYNC (iikoServer) =====================
+def _iiko_get(url, timeout=20):
+    req = urllib.request.Request(url, headers={"User-Agent": "MAXWAY"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def sync_iiko_menu(db):
+    """iikoServer nomenklaturasidan (products) menyuni menu_items ga tortadi.
+    Env: IIKO_HOST (https://host:port), IIKO_LOGIN, IIKO_PASS, IIKO_TYPES (ixtiyoriy, standart DISH).
+    Qaytaradi: (ok: bool, xabar: str)."""
+    host = os.environ.get("IIKO_HOST", "").rstrip("/")
+    login = os.environ.get("IIKO_LOGIN", "")
+    pw = os.environ.get("IIKO_PASS", "")
+    types = {t.strip().upper() for t in os.environ.get("IIKO_TYPES", "DISH").split(",") if t.strip()}
+    if not (host and login and pw):
+        return False, "iiko sozlanmagan (IIKO_HOST/IIKO_LOGIN/IIKO_PASS)"
+    token = None
+    try:
+        # 1) auth: pass = SHA1(parol)
+        pass_hash = hashlib.sha1(pw.encode()).hexdigest()
+        token = _iiko_get(f"{host}/resto/api/auth?login={urllib.parse.quote(login)}"
+                          f"&pass={pass_hash}").strip().strip('"')
+        if not token:
+            return False, "iiko auth: token olinmadi"
+        # 2) products
+        raw = _iiko_get(f"{host}/resto/api/v2/entities/products/list?key={token}"
+                        f"&includeDeleted=false")
+        products = json.loads(raw)
+        seen = set()
+        added = updated = 0
+        for p in products:
+            if p.get("deleted"):
+                continue
+            if types and (p.get("type") or "").upper() not in types:
+                continue
+            ext = str(p.get("id") or "")
+            name = (p.get("name") or "").strip()
+            if not name:
+                continue
+            seen.add(ext)
+            row = db.query(models.MenuItem).filter(models.MenuItem.ext_id == ext).first() if ext else None
+            if row:
+                row.name = name; row.is_active = True; updated += 1
+            else:
+                db.add(models.MenuItem(name=name, ext_id=ext, is_active=True)); added += 1
+        # iikoda yo'q bo'lib qolganlarni (ext_id li) yashiramiz
+        hidden = 0
+        for row in db.query(models.MenuItem).filter(models.MenuItem.ext_id.isnot(None)).all():
+            if row.ext_id not in seen and row.is_active:
+                row.is_active = False; hidden += 1
+        db.commit()
+        return True, f"Синхронизировано: +{added}, обновлено {updated}, скрыто {hidden}"
+    except Exception as e:
+        db.rollback()
+        return False, f"iiko xato: {e}"
+    finally:
+        if token:
+            try:
+                _iiko_get(f"{host}/resto/api/logout?key={token}", timeout=8)
+            except Exception:
+                pass
+
+
+@app.post("/stoplist/sync")
+def stoplist_sync(request: Request, db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user or user.role != Role.admin:
+        return RedirectResponse("/login", 302)
+    ok, msg = sync_iiko_menu(db)
+    return RedirectResponse(f"/stoplist?sync={urllib.parse.quote(msg)}", 302)

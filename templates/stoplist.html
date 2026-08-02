@@ -5,7 +5,20 @@
 <div class="page-head">
   <div><h1>🛑 Стоп-лист</h1>
     <p>{% if is_client %}Отметьте блюда, которых нет в наличии{% else %}Блюда на стопе по филиалам{% endif %}</p></div>
+  {% if can_manage_menu %}
+  <div class="head-actions">
+    <form method="post" action="/stoplist/sync" style="margin:0">
+      <button type="submit" class="btn btn-light">🔄 Синхронизировать с iiko</button>
+    </form>
+  </div>
+  {% endif %}
 </div>
+
+{% if sync_msg %}
+<div style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:12px 16px;border-radius:12px;margin-bottom:16px">
+  {{ sync_msg }}
+</div>
+{% endif %}
 
 {% if is_client %}
 <div class="panel">
