@@ -233,6 +233,7 @@ class StopEntry(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=tashkent_now)
     resolved = Column(Boolean, default=False)
+    resolved_at = Column(DateTime, nullable=True)   # stopdan olingan vaqti (tarix)
 
     branch = relationship("Branch")
     menu_item = relationship("MenuItem")

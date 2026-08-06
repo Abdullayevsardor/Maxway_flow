@@ -31,7 +31,8 @@ def _ensure_columns():
               ("requests", "subcategory_id", "INTEGER"),
               ("branches", "phone", "VARCHAR(40) DEFAULT ''"),
               ("branches", "director_name", "VARCHAR(120) DEFAULT ''"),
-              ("notifications", "from_name", "VARCHAR(120)")]
+              ("notifications", "from_name", "VARCHAR(120)"),
+              ("stop_entries", "resolved_at", "TIMESTAMP")]
     try:
         insp = sa_inspect(engine)
         tables = insp.get_table_names()
@@ -1283,6 +1284,11 @@ def can_see_stoplist(user):
     return user.role in (Role.client, Role.admin, Role.viewer) or is_supply(user)
 
 
+def can_manage_menu(user):
+    """Menyu boshqaruvi — faqat Снабжение bo'limidagi menejer."""
+    return user.role == Role.manager and is_supply(user)
+
+
 @app.get("/stoplist", response_class=HTMLResponse)
 def stoplist_page(request: Request, sync: str = "", db: Session = Depends(get_db)):
     user = current_user(request, db)
@@ -1292,15 +1298,19 @@ def stoplist_page(request: Request, sync: str = "", db: Session = Depends(get_db
         return RedirectResponse("/dashboard", 302)
     menu_items = db.query(models.MenuItem).filter(models.MenuItem.is_active == True)\
         .order_by(models.MenuItem.name).all()
-    q = db.query(models.StopEntry).filter(models.StopEntry.resolved == False)
     is_client = user.role == Role.client
+    q = db.query(models.StopEntry).filter(models.StopEntry.resolved == False)
+    hq = db.query(models.StopEntry).filter(models.StopEntry.resolved == True)
     if is_client:
         q = q.filter(models.StopEntry.branch_id == user.user_branch_id)
+        hq = hq.filter(models.StopEntry.branch_id == user.user_branch_id)
     entries = q.order_by(models.StopEntry.created_at.desc()).all()
+    history = hq.order_by(models.StopEntry.resolved_at.desc().nullslast()).limit(200).all()
     return templates.TemplateResponse(request, "stoplist.html", {
         "request": request, "user": user, "active": "stoplist",
-        "menu_items": menu_items, "entries": entries, "is_client": is_client,
-        "can_manage_menu": user.role == Role.admin,
+        "menu_items": menu_items, "entries": entries, "history": history,
+        "is_client": is_client,
+        "can_manage_menu": can_manage_menu(user),
         "can_resolve": user.role in (Role.admin, Role.manager) or is_supply(user) or is_client,
         "sync_msg": sync,
     })
@@ -1347,6 +1357,7 @@ def stoplist_resolve(sid: int, request: Request, db: Session = Depends(get_db)):
             or user.role in (Role.admin, Role.manager) or is_supply(user)
         if ok:
             e.resolved = True
+            e.resolved_at = datetime.utcnow() + timedelta(hours=5)
             db.commit()
     return RedirectResponse("/stoplist", 302)
 
@@ -1354,7 +1365,7 @@ def stoplist_resolve(sid: int, request: Request, db: Session = Depends(get_db)):
 @app.post("/stoplist/menu/add")
 def stoplist_menu_add(request: Request, name: str = Form(...), db: Session = Depends(get_db)):
     user = current_user(request, db)
-    if not user or user.role != Role.admin:
+    if not user or not can_manage_menu(user):
         return RedirectResponse("/login", 302)
     for line in name.splitlines():
         nm = line.strip()
@@ -1367,7 +1378,7 @@ def stoplist_menu_add(request: Request, name: str = Form(...), db: Session = Dep
 @app.post("/stoplist/menu/{mid}/delete")
 def stoplist_menu_delete(mid: int, request: Request, db: Session = Depends(get_db)):
     user = current_user(request, db)
-    if not user or user.role != Role.admin:
+    if not user or not can_manage_menu(user):
         return RedirectResponse("/login", 302)
     m = db.get(models.MenuItem, mid)
     if m:
@@ -1413,7 +1424,7 @@ def _parse_menu_file(filename, data):
 def stoplist_menu_upload(request: Request, replace: str = Form(""),
                          file: UploadFile = File(...), db: Session = Depends(get_db)):
     user = current_user(request, db)
-    if not user or user.role != Role.admin:
+    if not user or not can_manage_menu(user):
         return RedirectResponse("/login", 302)
     try:
         data = file.file.read()
@@ -1436,7 +1447,7 @@ def stoplist_menu_upload(request: Request, replace: str = Form(""),
 @app.post("/stoplist/menu/clear")
 def stoplist_menu_clear(request: Request, db: Session = Depends(get_db)):
     user = current_user(request, db)
-    if not user or user.role != Role.admin:
+    if not user or not can_manage_menu(user):
         return RedirectResponse("/login", 302)
     db.query(models.StopEntry).delete(synchronize_session=False)
     db.query(models.MenuItem).delete(synchronize_session=False)

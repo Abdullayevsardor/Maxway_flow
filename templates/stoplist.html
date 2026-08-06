@@ -26,11 +26,16 @@
     <form method="post" action="/stoplist/add">
       <div class="field"><label>Блюда (меню) · {{ menu_items|length }} шт. <span style="color:#94a3b8;font-weight:400">— можно выбрать несколько</span></label>
         <input type="text" id="menuSearch" class="inp" placeholder="🔍 Поиск блюда..." autocomplete="off" oninput="filterMenu()">
-        <div id="menuList" style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-top:8px">
+        <style>
+          .menu-chip{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--border);border-radius:999px;cursor:pointer;font-size:14px;background:#fff;user-select:none;transition:all .12s}
+          .menu-chip input{display:none}
+          .menu-chip:hover{border-color:#93c5fd}
+          .menu-chip:has(input:checked){background:#2563eb;border-color:#2563eb;color:#fff}
+        </style>
+        <div id="menuList" style="display:flex;flex-wrap:wrap;gap:8px;max-height:300px;overflow:auto;margin-top:8px;padding:4px">
           {% for m in menu_items %}
-          <label class="menu-opt" data-name="{{ m.name|lower }}"
-                 style="display:flex;gap:10px;align-items:center;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border)">
-            <input type="checkbox" name="menu_name" value="{{ m.name }}" onchange="onPick()" style="width:16px;height:16px">
+          <label class="menu-chip" data-name="{{ m.name|lower }}">
+            <input type="checkbox" name="menu_name" value="{{ m.name }}" onchange="onPick()">
             <span>{{ m.name }}</span>
           </label>
           {% endfor %}
@@ -53,8 +58,8 @@
     <script>
       function filterMenu(){
         var q=document.getElementById('menuSearch').value.toLowerCase();
-        document.querySelectorAll('#menuList .menu-opt').forEach(function(el){
-          el.style.display = el.dataset.name.indexOf(q)>=0 ? 'flex':'none';
+        document.querySelectorAll('#menuList .menu-chip').forEach(function(el){
+          el.style.display = el.dataset.name.indexOf(q)>=0 ? 'inline-flex':'none';
         });
       }
       function onPick(){
@@ -106,6 +111,31 @@
     {% endif %}
   </div>
 </div>
+
+{% if history %}
+<div class="panel">
+  <div class="panel-head"><div class="title">📜 История стоп-листа <span class="badge">{{ history|length }}</span></div></div>
+  <div class="panel-body">
+    <table>
+      <thead><tr>
+        {% if not is_client %}<th>ФИЛИАЛ</th>{% endif %}
+        <th>БЛЮДО</th><th>ПРИЧИНА</th><th>ДОБАВЛЕНО</th><th>УБРАНО</th>
+      </tr></thead>
+      <tbody>
+        {% for e in history %}
+        <tr>
+          {% if not is_client %}<td data-label="Филиал">{{ e.branch.name if e.branch else "—" }}</td>{% endif %}
+          <td data-label="Блюдо">{{ e.menu_item.name if e.menu_item else "—" }}</td>
+          <td data-label="Причина"><span class="tag" style="background:#f1f5f9;color:#64748b">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
+          <td data-label="Добавлено" style="color:#94a3b8;font-size:13px">{{ e.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+          <td data-label="Убрано" style="color:#94a3b8;font-size:13px">{{ e.resolved_at.strftime('%d.%m.%Y %H:%M') if e.resolved_at else "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 {% if can_manage_menu %}
 <div class="panel">
