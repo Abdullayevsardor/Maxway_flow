@@ -24,9 +24,16 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Дашборд</a>
       <a href="/requests" class="{{ 'active' if active=='requests' }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></svg>Заявки</a>
-      {% if user.role.value in ['client','admin','viewer'] or (user.department and 'набжен' in (user.department.name or '')|lower) %}
+      {% set _supply = user.department and 'набжен' in (user.department.name or '')|lower %}
+      {% if user.role.value in ['client','viewer'] or _supply %}
       <a href="/stoplist" class="{{ 'active' if active=='stoplist' }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 9h6v6H9z"/></svg>Стоп-лист</a>
+      <a href="/stoplist/history" class="{{ 'active' if active=='stophistory' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 3"/></svg>История</a>
+      {% endif %}
+      {% if user.role.value == 'manager' and _supply %}
+      <a href="/stoplist/menu" class="{{ 'active' if active=='stopmenu' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>Меню</a>
       {% endif %}
       {% if user.role.value in ['admin','manager','executor','viewer'] %}
       <a href="/executors" class="{{ 'active' if active=='executors' }}">

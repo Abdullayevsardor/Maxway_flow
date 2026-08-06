@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}История стоп-листа{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div><h1>📜 История стоп-листа</h1>
+    <p>Блюда, которые уже убрали со стопа</p></div>
+</div>
+
+<div class="panel">
+  <div class="panel-head"><div class="title">История <span class="badge">{{ history|length }}</span></div></div>
+  <div class="panel-body">
+    {% if history %}
+    <table>
+      <thead><tr>
+        {% if not is_client %}<th>ФИЛИАЛ</th>{% endif %}
+        <th>БЛЮДО</th><th>ПРИЧИНА</th><th>ДОБАВЛЕНО</th><th>УБРАНО</th>
+      </tr></thead>
+      <tbody>
+        {% for e in history %}
+        <tr>
+          {% if not is_client %}<td data-label="Филиал">{{ e.branch.name if e.branch else "—" }}</td>{% endif %}
+          <td data-label="Блюдо"><b>{{ e.menu_item.name if e.menu_item else "—" }}</b></td>
+          <td data-label="Причина"><span class="tag" style="background:#f1f5f9;color:#64748b">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
+          <td data-label="Добавлено" style="color:#94a3b8;font-size:13px">{{ e.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+          <td data-label="Убрано" style="color:#94a3b8;font-size:13px">{{ e.resolved_at.strftime('%d.%m.%Y %H:%M') if e.resolved_at else "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:#94a3b8;margin:0">История пуста</p>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

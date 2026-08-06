@@ -1280,8 +1280,8 @@ def is_supply(user):
 
 
 def can_see_stoplist(user):
-    # faqat Снабжение bo'limi, filial direktorlari, admin (menyu boshqaruvi) va viewer (kuzatuv)
-    return user.role in (Role.client, Role.admin, Role.viewer) or is_supply(user)
+    # Снабжение bo'limi, filial direktorlari, viewer (ADMIN EMAS)
+    return user.role in (Role.client, Role.viewer) or is_supply(user)
 
 
 def can_manage_menu(user):
@@ -1296,23 +1296,49 @@ def stoplist_page(request: Request, sync: str = "", db: Session = Depends(get_db
         return RedirectResponse("/login", 302)
     if not can_see_stoplist(user):
         return RedirectResponse("/dashboard", 302)
-    menu_items = db.query(models.MenuItem).filter(models.MenuItem.is_active == True)\
-        .order_by(models.MenuItem.name).all()
     is_client = user.role == Role.client
+    menu_items = db.query(models.MenuItem).filter(models.MenuItem.is_active == True)\
+        .order_by(models.MenuItem.name).all() if is_client else []
     q = db.query(models.StopEntry).filter(models.StopEntry.resolved == False)
-    hq = db.query(models.StopEntry).filter(models.StopEntry.resolved == True)
     if is_client:
         q = q.filter(models.StopEntry.branch_id == user.user_branch_id)
-        hq = hq.filter(models.StopEntry.branch_id == user.user_branch_id)
     entries = q.order_by(models.StopEntry.created_at.desc()).all()
-    history = hq.order_by(models.StopEntry.resolved_at.desc().nullslast()).limit(200).all()
     return templates.TemplateResponse(request, "stoplist.html", {
         "request": request, "user": user, "active": "stoplist",
-        "menu_items": menu_items, "entries": entries, "history": history,
-        "is_client": is_client,
-        "can_manage_menu": can_manage_menu(user),
-        "can_resolve": user.role in (Role.admin, Role.manager) or is_supply(user) or is_client,
-        "sync_msg": sync,
+        "menu_items": menu_items, "entries": entries, "is_client": is_client,
+        "can_resolve": is_supply(user) or is_client, "sync_msg": sync,
+    })
+
+
+@app.get("/stoplist/history", response_class=HTMLResponse)
+def stoplist_history_page(request: Request, db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    if not can_see_stoplist(user):
+        return RedirectResponse("/dashboard", 302)
+    is_client = user.role == Role.client
+    hq = db.query(models.StopEntry).filter(models.StopEntry.resolved == True)
+    if is_client:
+        hq = hq.filter(models.StopEntry.branch_id == user.user_branch_id)
+    history = hq.order_by(models.StopEntry.resolved_at.desc().nullslast()).limit(500).all()
+    return templates.TemplateResponse(request, "stoplist_history.html", {
+        "request": request, "user": user, "active": "stophistory",
+        "history": history, "is_client": is_client,
+    })
+
+
+@app.get("/stoplist/menu", response_class=HTMLResponse)
+def stoplist_menu_page(request: Request, sync: str = "", db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    if not can_manage_menu(user):
+        return RedirectResponse("/dashboard", 302)
+    menu_items = db.query(models.MenuItem).order_by(models.MenuItem.name).all()
+    return templates.TemplateResponse(request, "stoplist_menu.html", {
+        "request": request, "user": user, "active": "stopmenu",
+        "menu_items": menu_items, "sync_msg": sync,
     })
 
 
@@ -1352,9 +1378,9 @@ def stoplist_resolve(sid: int, request: Request, db: Session = Depends(get_db)):
         return RedirectResponse("/login", 302)
     e = db.get(models.StopEntry, sid)
     if e:
-        # klient faqat o'z filialini, aks holda snabjenie/admin/menejer
+        # klient faqat o'z filialini, aks holda snabjenie xodimi
         ok = (user.role == Role.client and e.branch_id == user.user_branch_id) \
-            or user.role in (Role.admin, Role.manager) or is_supply(user)
+            or is_supply(user)
         if ok:
             e.resolved = True
             e.resolved_at = datetime.utcnow() + timedelta(hours=5)
@@ -1372,7 +1398,7 @@ def stoplist_menu_add(request: Request, name: str = Form(...), db: Session = Dep
         if nm and not db.query(models.MenuItem).filter(models.MenuItem.name == nm).first():
             db.add(models.MenuItem(name=nm))
     db.commit()
-    return RedirectResponse("/stoplist", 302)
+    return RedirectResponse("/stoplist/menu", 302)
 
 
 @app.post("/stoplist/menu/{mid}/delete")
@@ -1384,7 +1410,7 @@ def stoplist_menu_delete(mid: int, request: Request, db: Session = Depends(get_d
     if m:
         db.query(models.StopEntry).filter(models.StopEntry.menu_item_id == mid).delete()
         db.delete(m); db.commit()
-    return RedirectResponse("/stoplist", 302)
+    return RedirectResponse("/stoplist/menu", 302)
 
 
 # ===================== MENYU YUKLASH (Excel/PDF) + STOP-LIST EXPORT =====================
@@ -1430,7 +1456,7 @@ def stoplist_menu_upload(request: Request, replace: str = Form(""),
         data = file.file.read()
         names = _parse_menu_file(file.filename, data)
     except Exception as e:
-        return RedirectResponse(f"/stoplist?sync={urllib.parse.quote('Ошибка файла: ' + str(e)[:120])}", 302)
+        return RedirectResponse(f"/stoplist/menu?sync={urllib.parse.quote('Ошибка файла: ' + str(e)[:120])}", 302)
     if replace == "1":
         # eski menyuni o'chiramiz (stop-listlar bilan)
         db.query(models.StopEntry).delete(synchronize_session=False)
@@ -1441,7 +1467,7 @@ def stoplist_menu_upload(request: Request, replace: str = Form(""),
             db.add(models.MenuItem(name=nm, is_active=True)); added += 1
     db.commit()
     msg = f"Меню загружено: {added} новых из {len(names)} (файл: {file.filename})"
-    return RedirectResponse(f"/stoplist?sync={urllib.parse.quote(msg)}", 302)
+    return RedirectResponse(f"/stoplist/menu?sync={urllib.parse.quote(msg)}", 302)
 
 
 @app.post("/stoplist/menu/clear")
@@ -1452,7 +1478,7 @@ def stoplist_menu_clear(request: Request, db: Session = Depends(get_db)):
     db.query(models.StopEntry).delete(synchronize_session=False)
     db.query(models.MenuItem).delete(synchronize_session=False)
     db.commit()
-    return RedirectResponse("/stoplist?sync=" + urllib.parse.quote("Меню очищено"), 302)
+    return RedirectResponse("/stoplist/menu?sync=" + urllib.parse.quote("Меню очищено"), 302)
 
 
 @app.get("/stoplist/export")
