@@ -24,16 +24,21 @@
   <div class="panel-body">
     {% if menu_items %}
     <form method="post" action="/stoplist/add">
-      <div class="field"><label>Блюдо (меню) <span style="color:#94a3b8;font-weight:400">— начните вводить для поиска</span></label>
-        <input type="text" name="menu_name" class="inp" required autocomplete="off"
-               list="menuOptions" placeholder="🔍 Поиск блюда..."
-               oninput="document.getElementById('reasonBox').style.display=this.value?'block':'none'">
-        <datalist id="menuOptions">
-          {% for m in menu_items %}<option value="{{ m.name }}"></option>{% endfor %}
-        </datalist>
+      <div class="field"><label>Блюда (меню) · {{ menu_items|length }} шт. <span style="color:#94a3b8;font-weight:400">— можно выбрать несколько</span></label>
+        <input type="text" id="menuSearch" class="inp" placeholder="🔍 Поиск блюда..." autocomplete="off" oninput="filterMenu()">
+        <div id="menuList" style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-top:8px">
+          {% for m in menu_items %}
+          <label class="menu-opt" data-name="{{ m.name|lower }}"
+                 style="display:flex;gap:10px;align-items:center;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border)">
+            <input type="checkbox" name="menu_name" value="{{ m.name }}" onchange="onPick()" style="width:16px;height:16px">
+            <span>{{ m.name }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <div id="pickCount" style="margin-top:8px;font-size:14px;color:#2563eb;font-weight:600"></div>
       </div>
       <div id="reasonBox" style="display:none">
-        <div class="field"><label>Причина</label>
+        <div class="field"><label>Причина <span style="color:#94a3b8;font-weight:400">(для всех выбранных)</span></label>
           <select name="reason" class="inp" required>
             <option value="">— выберите причину —</option>
             {% for rk, rl in REASON_LABELS.items() %}<option value="{{ rk }}">{{ rl }}</option>{% endfor %}
@@ -45,6 +50,19 @@
         <button type="submit" class="btn btn-blue">＋ Добавить в стоп-лист</button>
       </div>
     </form>
+    <script>
+      function filterMenu(){
+        var q=document.getElementById('menuSearch').value.toLowerCase();
+        document.querySelectorAll('#menuList .menu-opt').forEach(function(el){
+          el.style.display = el.dataset.name.indexOf(q)>=0 ? 'flex':'none';
+        });
+      }
+      function onPick(){
+        var n=document.querySelectorAll('#menuList input:checked').length;
+        document.getElementById('reasonBox').style.display = n>0 ? 'block':'none';
+        document.getElementById('pickCount').textContent = n ? ('✓ Выбрано: '+n) : '';
+      }
+    </script>
     {% else %}
     <p style="color:#94a3b8;margin:0">Меню пока пусто. Обратитесь к администратору, чтобы загрузить меню.</p>
     {% endif %}

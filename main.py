@@ -1307,7 +1307,7 @@ def stoplist_page(request: Request, sync: str = "", db: Session = Depends(get_db
 
 
 @app.post("/stoplist/add")
-def stoplist_add(request: Request, menu_name: str = Form(...),
+def stoplist_add(request: Request, menu_name: List[str] = Form([]),
                  reason: str = Form(...), comment: str = Form(""),
                  db: Session = Depends(get_db)):
     user = current_user(request, db)
@@ -1315,20 +1315,22 @@ def stoplist_add(request: Request, menu_name: str = Form(...),
         return RedirectResponse("/login", 302)
     if reason not in REASON_LABELS:
         return RedirectResponse("/stoplist", 302)
-    mi = db.query(models.MenuItem).filter(
-        models.MenuItem.name == menu_name.strip(),
-        models.MenuItem.is_active == True).first()
-    if not mi:
-        return RedirectResponse("/stoplist?sync=" +
-                                urllib.parse.quote("Блюдо не найдено в меню"), 302)
-    # xuddi shu taom shu filialda ochiq stopda bo'lsa — takrorlamaymiz
-    exists = db.query(models.StopEntry).filter(
-        models.StopEntry.branch_id == user.user_branch_id,
-        models.StopEntry.menu_item_id == mi.id,
-        models.StopEntry.resolved == False).first()
-    if not exists:
-        db.add(models.StopEntry(branch_id=user.user_branch_id, menu_item_id=mi.id,
-               reason=reason, comment=comment.strip(), created_by=user.id))
+    added = 0
+    for nm in menu_name:
+        mi = db.query(models.MenuItem).filter(
+            models.MenuItem.name == nm.strip(),
+            models.MenuItem.is_active == True).first()
+        if not mi:
+            continue
+        exists = db.query(models.StopEntry).filter(
+            models.StopEntry.branch_id == user.user_branch_id,
+            models.StopEntry.menu_item_id == mi.id,
+            models.StopEntry.resolved == False).first()
+        if not exists:
+            db.add(models.StopEntry(branch_id=user.user_branch_id, menu_item_id=mi.id,
+                   reason=reason, comment=comment.strip(), created_by=user.id))
+            added += 1
+    if added:
         db.commit()
     return RedirectResponse("/stoplist", 302)
 
