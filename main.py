@@ -1302,12 +1302,12 @@ def stoplist_page(request: Request, sync: str = "", db: Session = Depends(get_db
         "menu_items": menu_items, "entries": entries, "is_client": is_client,
         "can_manage_menu": user.role == Role.admin,
         "can_resolve": user.role in (Role.admin, Role.manager) or is_supply(user) or is_client,
-        "iiko_on": bool(os.environ.get("IIKO_HOST")), "sync_msg": sync,
+        "sync_msg": sync,
     })
 
 
 @app.post("/stoplist/add")
-def stoplist_add(request: Request, menu_item_id: int = Form(...),
+def stoplist_add(request: Request, menu_name: str = Form(...),
                  reason: str = Form(...), comment: str = Form(""),
                  db: Session = Depends(get_db)):
     user = current_user(request, db)
@@ -1315,13 +1315,19 @@ def stoplist_add(request: Request, menu_item_id: int = Form(...),
         return RedirectResponse("/login", 302)
     if reason not in REASON_LABELS:
         return RedirectResponse("/stoplist", 302)
+    mi = db.query(models.MenuItem).filter(
+        models.MenuItem.name == menu_name.strip(),
+        models.MenuItem.is_active == True).first()
+    if not mi:
+        return RedirectResponse("/stoplist?sync=" +
+                                urllib.parse.quote("Блюдо не найдено в меню"), 302)
     # xuddi shu taom shu filialda ochiq stopda bo'lsa — takrorlamaymiz
     exists = db.query(models.StopEntry).filter(
         models.StopEntry.branch_id == user.user_branch_id,
-        models.StopEntry.menu_item_id == menu_item_id,
+        models.StopEntry.menu_item_id == mi.id,
         models.StopEntry.resolved == False).first()
     if not exists:
-        db.add(models.StopEntry(branch_id=user.user_branch_id, menu_item_id=menu_item_id,
+        db.add(models.StopEntry(branch_id=user.user_branch_id, menu_item_id=mi.id,
                reason=reason, comment=comment.strip(), created_by=user.id))
         db.commit()
     return RedirectResponse("/stoplist", 302)
@@ -1368,109 +1374,102 @@ def stoplist_menu_delete(mid: int, request: Request, db: Session = Depends(get_d
     return RedirectResponse("/stoplist", 302)
 
 
-# ===================== iiko MENYU SYNC (iikoCloud / Transport API) =====================
-def _iiko_post(base, path, token, payload, timeout=40):
-    data = json.dumps(payload).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(base + path, data=data, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
+# ===================== MENYU YUKLASH (Excel/PDF) + STOP-LIST EXPORT =====================
+def _parse_menu_file(filename, data):
+    """Excel (.xlsx) yoki PDF fayldan taom nomlarini ajratib oladi. Nomlar ro'yxatini qaytaradi."""
+    names = []
+    fn = (filename or "").lower()
+    if fn.endswith((".xlsx", ".xlsm")):
+        import openpyxl, io
+        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(values_only=True):
+                for cell in row:
+                    if isinstance(cell, str) and cell.strip() and len(cell.strip()) >= 2:
+                        names.append(cell.strip())
+        wb.close()
+    elif fn.endswith(".pdf"):
+        from pypdf import PdfReader
+        import io
+        reader = PdfReader(io.BytesIO(data))
+        for page in reader.pages:
+            for line in (page.extract_text() or "").splitlines():
+                s = line.strip()
+                if len(s) >= 2:
+                    names.append(s)
+    else:
+        raise ValueError("Faqat .xlsx yoki .pdf")
+    # takrorlarni olib tashlaymiz (tartibni saqlab)
+    seen, out = set(), []
+    for n in names:
+        if n not in seen:
+            seen.add(n); out.append(n)
+    return out
 
 
-def sync_iiko_menu(db):
-    """iikoCloud (api-ru.iiko.services) nomenklaturasidan menyuni menu_items ga tortadi.
-    Env: IIKO_API_LOGIN (API kalit), IIKO_HOST (ixtiyoriy, standart api-ru.iiko.services),
-    IIKO_ORG_ID (ixtiyoriy — bo'sh bo'lsa barcha organizatsiyalar), IIKO_TYPES (standart 'dish,good').
-    Qaytaradi: (ok: bool, xabar: str)."""
-    api_login = os.environ.get("IIKO_API_LOGIN", "").strip()
-    base = os.environ.get("IIKO_HOST", "https://api-ru.iiko.services").rstrip("/")
-    org_env = os.environ.get("IIKO_ORG_ID", "").strip()
-    # standart: filtr yo'q (hamma taom). IIKO_TYPES berilsa — faqat o'shalar.
-    types = {t.strip().lower() for t in os.environ.get("IIKO_TYPES", "").split(",") if t.strip()}
-    if not api_login:
-        return False, "iiko sozlanmagan (IIKO_API_LOGIN)"
-    try:
-        # 1) access token — endpoint apiKey VA clientSecret ikkalasini so'raydi
-        token_path = os.environ.get("IIKO_TOKEN_PATH", "/api/v2/access_token")
-        api_key = os.environ.get("IIKO_CLIENT_SECRET", "").strip() or api_login
-        auth_body = {"apiKey": api_key, "clientSecret": api_key}
-        cid = os.environ.get("IIKO_CLIENT_ID", "").strip()
-        if cid:
-            auth_body["clientId"] = cid
-        tok_resp = _iiko_post(base, token_path, None, auth_body)
-        tok = tok_resp.get("token") or tok_resp.get("access_token") or tok_resp.get("accessToken")
-        if not tok:
-            return False, f"iiko: token olinmadi (javob: {str(tok_resp)[:150]})"
-        # 2) organizatsiyalar
-        if org_env:
-            org_ids = [o.strip() for o in org_env.split(",") if o.strip()]
-        else:
-            orgs = _iiko_post(base, "/api/1/organizations", tok,
-                              {"returnAdditionalInfo": False, "includeDisabled": False})
-            org_ids = [o["id"] for o in orgs.get("organizations", [])]
-        print(f">>> [MAXWAY] iiko: organizatsiya = {len(org_ids)}", flush=True)
-        if not org_ids:
-            return False, "iiko: organizatsiya topilmadi"
-        # 3) har org nomenklaturasi — nomlarni yig'amiz (umumiy menyu)
-        names = {}  # name -> ext_id
-        total_products = 0
-        seen_types = set()
-        for oid in org_ids:
-            nom = _iiko_post(base, "/api/1/nomenclature", tok, {"organizationId": oid})
-            prods = nom.get("products", [])
-            total_products += len(prods)
-            for p in prods:
-                if p.get("isDeleted"):
-                    continue
-                ptype = (p.get("type") or "").lower()
-                seen_types.add(ptype)
-                if types and ptype not in types:
-                    continue
-                nm = (p.get("name") or "").strip()
-                if nm and nm not in names:
-                    names[nm] = str(p.get("id") or "")
-        print(f">>> [MAXWAY] iiko: jami mahsulot={total_products}, "
-              f"turlar={seen_types}, tanlangan nom={len(names)}", flush=True)
-        # 4) menu_items ga yozamiz (nom bo'yicha)
-        added = updated = 0
-        for nm, ext in names.items():
-            row = db.query(models.MenuItem).filter(models.MenuItem.name == nm).first()
-            if row:
-                row.is_active = True
-                if ext:
-                    row.ext_id = ext
-                updated += 1
-            else:
-                db.add(models.MenuItem(name=nm, ext_id=ext or "iiko", is_active=True))
-                added += 1
-        # 5) iiko'dan yo'qolganlarni (ext_id li) yashiramiz
-        hidden = 0
-        for row in db.query(models.MenuItem).filter(models.MenuItem.ext_id.isnot(None)).all():
-            if row.name not in names and row.is_active:
-                row.is_active = False
-                hidden += 1
-        db.commit()
-        return True, (f"Товаров получено: {total_products} · добавлено +{added}, "
-                      f"обновлено {updated}, скрыто {hidden} (организаций: {len(org_ids)})")
-    except urllib.error.HTTPError as e:
-        try:
-            body = e.read().decode("utf-8", "replace")[:250]
-        except Exception:
-            body = ""
-        db.rollback()
-        return False, f"iiko HTTP {e.code}: {body}"
-    except Exception as e:
-        db.rollback()
-        return False, f"iiko xato: {e}"
-
-
-@app.post("/stoplist/sync")
-def stoplist_sync(request: Request, db: Session = Depends(get_db)):
+@app.post("/stoplist/menu/upload")
+def stoplist_menu_upload(request: Request, replace: str = Form(""),
+                         file: UploadFile = File(...), db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
-    ok, msg = sync_iiko_menu(db)
-    print(f">>> [MAXWAY] iiko sync natija: ok={ok} | {msg}", flush=True)
+    try:
+        data = file.file.read()
+        names = _parse_menu_file(file.filename, data)
+    except Exception as e:
+        return RedirectResponse(f"/stoplist?sync={urllib.parse.quote('Ошибка файла: ' + str(e)[:120])}", 302)
+    if replace == "1":
+        # eski menyuni o'chiramiz (stop-listlar bilan)
+        db.query(models.StopEntry).delete(synchronize_session=False)
+        db.query(models.MenuItem).delete(synchronize_session=False)
+    added = 0
+    for nm in names:
+        if not db.query(models.MenuItem).filter(models.MenuItem.name == nm).first():
+            db.add(models.MenuItem(name=nm, is_active=True)); added += 1
+    db.commit()
+    msg = f"Меню загружено: {added} новых из {len(names)} (файл: {file.filename})"
     return RedirectResponse(f"/stoplist?sync={urllib.parse.quote(msg)}", 302)
+
+
+@app.post("/stoplist/menu/clear")
+def stoplist_menu_clear(request: Request, db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user or user.role != Role.admin:
+        return RedirectResponse("/login", 302)
+    db.query(models.StopEntry).delete(synchronize_session=False)
+    db.query(models.MenuItem).delete(synchronize_session=False)
+    db.commit()
+    return RedirectResponse("/stoplist?sync=" + urllib.parse.quote("Меню очищено"), 302)
+
+
+@app.get("/stoplist/export")
+def stoplist_export(request: Request, db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user or not can_see_stoplist(user):
+        return RedirectResponse("/login", 302)
+    import openpyxl, io
+    from fastapi.responses import StreamingResponse
+    q = db.query(models.StopEntry).filter(models.StopEntry.resolved == False)
+    if user.role == Role.client:
+        q = q.filter(models.StopEntry.branch_id == user.user_branch_id)
+    entries = q.order_by(models.StopEntry.created_at.desc()).all()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Стоп-лист"
+    ws.append(["Филиал", "Блюдо", "Причина", "Комментарий", "Добавлено"])
+    for e in entries:
+        ws.append([
+            e.branch.name if e.branch else "",
+            e.menu_item.name if e.menu_item else "",
+            REASON_LABELS.get(e.reason, e.reason),
+            e.comment or "",
+            e.created_at.strftime("%d.%m.%Y %H:%M"),
+        ])
+    for col, w in zip("ABCDE", (24, 34, 26, 34, 18)):
+        ws.column_dimensions[col].width = w
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    fname = f"stop-list-{(datetime.utcnow() + timedelta(hours=5)).strftime('%Y%m%d-%H%M')}.xlsx"
+    return StreamingResponse(
+        buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'})

@@ -5,13 +5,11 @@
 <div class="page-head">
   <div><h1>🛑 Стоп-лист</h1>
     <p>{% if is_client %}Отметьте блюда, которых нет в наличии{% else %}Блюда на стопе по филиалам{% endif %}</p></div>
-  {% if can_manage_menu %}
   <div class="head-actions">
-    <form method="post" action="/stoplist/sync" style="margin:0">
-      <button type="submit" class="btn btn-light">🔄 Синхронизировать с iiko</button>
-    </form>
+    {% if entries %}
+    <a href="/stoplist/export" class="btn btn-light">⬇ Скачать Excel</a>
+    {% endif %}
   </div>
-  {% endif %}
 </div>
 
 {% if sync_msg %}
@@ -26,12 +24,13 @@
   <div class="panel-body">
     {% if menu_items %}
     <form method="post" action="/stoplist/add">
-      <div class="field"><label>Блюдо (меню)</label>
-        <select name="menu_item_id" class="inp" required
-                onchange="document.getElementById('reasonBox').style.display=this.value?'block':'none'">
-          <option value="">— выберите блюдо —</option>
-          {% for m in menu_items %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}
-        </select>
+      <div class="field"><label>Блюдо (меню) <span style="color:#94a3b8;font-weight:400">— начните вводить для поиска</span></label>
+        <input type="text" name="menu_name" class="inp" required autocomplete="off"
+               list="menuOptions" placeholder="🔍 Поиск блюда..."
+               oninput="document.getElementById('reasonBox').style.display=this.value?'block':'none'">
+        <datalist id="menuOptions">
+          {% for m in menu_items %}<option value="{{ m.name }}"></option>{% endfor %}
+        </datalist>
       </div>
       <div id="reasonBox" style="display:none">
         <div class="field"><label>Причина</label>
@@ -47,7 +46,7 @@
       </div>
     </form>
     {% else %}
-    <p style="color:#94a3b8;margin:0">Меню пока пусто. Обратитесь к администратору, чтобы добавить блюда.</p>
+    <p style="color:#94a3b8;margin:0">Меню пока пусто. Обратитесь к администратору, чтобы загрузить меню.</p>
     {% endif %}
   </div>
 </div>
@@ -62,7 +61,7 @@
     <table>
       <thead><tr>
         {% if not is_client %}<th>ФИЛИАЛ</th>{% endif %}
-        <th>БЛЮДО</th><th>ПРИЧИНА</th><th>КОММЕНТАРИЙ</th><th>КОГДА</th>{% if can_resolve %}<th></th>{% endif %}
+        <th>БЛЮДО</th><th>ПРИЧИНА</th><th>КОММЕНТАРИЙ</th><th>ДОБАВЛЕНО</th>{% if can_resolve %}<th></th>{% endif %}
       </tr></thead>
       <tbody>
         {% for e in entries %}
@@ -71,7 +70,7 @@
           <td data-label="Блюдо"><b>{{ e.menu_item.name if e.menu_item else "—" }}</b></td>
           <td data-label="Причина"><span class="tag" style="background:#fef3c7;color:#b45309">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
           <td data-label="Комментарий">{{ e.comment or "—" }}</td>
-          <td data-label="Когда" style="color:#94a3b8;font-size:13px">{{ e.created_at.strftime('%d.%m %H:%M') }}</td>
+          <td data-label="Добавлено" style="color:#94a3b8;font-size:13px">{{ e.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
           {% if can_resolve %}
           <td>
             <form method="post" action="/stoplist/{{ e.id }}/resolve" style="margin:0"
@@ -94,13 +93,39 @@
 <div class="panel">
   <div class="panel-head"><div class="title">Меню для стоп-листа <span class="badge">{{ menu_items|length }}</span></div></div>
   <div class="panel-body">
-    <form method="post" action="/stoplist/menu/add" style="margin-bottom:14px">
-      <div class="field"><label>Добавить блюда <span style="color:#94a3b8;font-weight:400">(каждое с новой строки)</span></label>
-        <textarea name="name" class="inp" style="width:100%;min-height:70px;padding:10px" placeholder="Лаваш&#10;Кола 0.5&#10;Картофель фри"></textarea>
-      </div>
-      <button type="submit" class="btn btn-blue">＋ Добавить в меню</button>
+
+    <p style="font-weight:600;color:#475569;margin:0 0 8px;font-size:14px">📄 Загрузить из файла (Excel .xlsx или PDF)</p>
+    <form method="post" action="/stoplist/menu/upload" enctype="multipart/form-data"
+          style="margin-bottom:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <input type="file" name="file" accept=".xlsx,.xlsm,.pdf" required
+             style="border:1px solid var(--border);border-radius:10px;padding:8px">
+      <label style="font-size:13px;color:#475569;display:inline-flex;align-items:center;gap:6px">
+        <input type="checkbox" name="replace" value="1"> Заменить всё меню
+      </label>
+      <button type="submit" class="btn btn-blue">⬆ Загрузить меню</button>
     </form>
-    <div style="display:flex;flex-wrap:wrap;gap:8px">
+    <p style="color:#94a3b8;font-size:12px;margin:0 0 18px">
+      Excel: названия блюд в ячейках (по одному). PDF: по одному названию в строке.
+    </p>
+
+    <p style="font-weight:600;color:#475569;margin:0 0 8px;font-size:14px">✍️ Или вручную <span style="color:#94a3b8;font-weight:400">(каждое с новой строки)</span></p>
+    <form method="post" action="/stoplist/menu/add" style="margin-bottom:16px">
+      <div class="field">
+        <textarea name="name" class="inp" style="width:100%;min-height:60px;padding:10px" placeholder="Лаваш&#10;Кола 0.5&#10;Картофель фри"></textarea>
+      </div>
+      <button type="submit" class="btn btn-light">＋ Добавить</button>
+    </form>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="font-weight:600;color:#475569;font-size:14px">Текущее меню</span>
+      {% if menu_items %}
+      <form method="post" action="/stoplist/menu/clear" style="margin:0"
+            onsubmit="return confirm('Очистить ВСЁ меню и стоп-листы? Это необратимо.')">
+        <button type="submit" class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:6px 12px">🗑 Очистить всё</button>
+      </form>
+      {% endif %}
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;max-height:320px;overflow:auto">
       {% for m in menu_items %}
       <span class="tag" style="background:#f1f5f9;color:#334155;display:inline-flex;align-items:center;gap:6px">
         {{ m.name }}
@@ -110,7 +135,7 @@
         </form>
       </span>
       {% else %}
-      <span style="color:#94a3b8">Меню пусто — добавьте блюда выше.</span>
+      <span style="color:#94a3b8">Меню пусто — загрузите файл или добавьте вручную.</span>
       {% endfor %}
     </div>
   </div>
