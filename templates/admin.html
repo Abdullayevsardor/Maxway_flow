@@ -12,8 +12,12 @@
     <button class="btn btn-blue" onclick="open_('user')">＋ Добавить пользователя</button>
   </div>
   <table>
-    <thead><tr><th>Имя</th><th>Email</th><th>Роль</th><th>Категория</th><th></th></tr></thead>
-    <tbody>
+    <thead><tr><th colspan="5" style="padding:10px 12px">
+      <input type="text" id="userSearch" class="inp" placeholder="🔍 Поиск по имени, email, роли..."
+             oninput="filterRows(this,'userRows')" style="width:100%;max-width:420px">
+    </th></tr>
+    <tr><th>Имя</th><th>Email</th><th>Роль</th><th>Категория</th><th></th></tr></thead>
+    <tbody id="userRows">
       {% for u in users %}
       <tr>
         <td data-label="Имя"><b>{{ u.full_name }}</b></td>
@@ -45,8 +49,12 @@
     {% endif %}
   </div>
   <table>
-    <thead><tr><th>Название</th><th>Заявок</th><th></th></tr></thead>
-    <tbody>
+    <thead><tr><th colspan="3" style="padding:10px 12px">
+      <input type="text" id="catSearch" class="inp" placeholder="🔍 Поиск категории..."
+             oninput="filterRows(this,'catRows')" style="width:100%;max-width:420px">
+    </th></tr>
+    <tr><th>Название</th><th>Заявок</th><th></th></tr></thead>
+    <tbody id="catRows">
       {% for d in departments %}
       <tr>
         <td data-label="Название"><b>{{ d.name }}</b>
@@ -74,8 +82,12 @@
     <button class="btn btn-blue" onclick="open_('branch')">＋ Добавить филиал</button>
   </div>
   <table>
-    <thead><tr><th>Название</th><th>Локация (адрес)</th><th></th></tr></thead>
-    <tbody>
+    <thead><tr><th colspan="3" style="padding:10px 12px">
+      <input type="text" id="branchSearch" class="inp" placeholder="🔍 Поиск филиала (название, адрес)..."
+             oninput="filterRows(this,'branchRows')" style="width:100%;max-width:420px">
+    </th></tr>
+    <tr><th>Название</th><th>Локация (адрес)</th><th></th></tr></thead>
+    <tbody id="branchRows">
       {% for b in branches %}
       <tr>
         <td data-label="Название"><b>{{ b.name }}</b></td>
@@ -238,6 +250,13 @@
 {% endblock %}
 {% block scripts %}
 <script>
+  function filterRows(inp, tbodyId){
+    var q = inp.value.toLowerCase();
+    var rows = document.getElementById(tbodyId).querySelectorAll('tr');
+    rows.forEach(function(tr){
+      tr.style.display = tr.innerText.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+    });
+  }
   function open_(n){document.getElementById('modal-'+n).classList.add('open')}
   function close_(n){document.getElementById('modal-'+n).classList.remove('open')}
   document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
