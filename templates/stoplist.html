@@ -5,20 +5,21 @@
 {% macro stop_table(rows, can_resolve, can_comment) %}
 <table>
   <thead><tr>
-    <th>БЛЮДО</th><th>ПРИЧИНА</th><th>КОММЕНТАРИЙ СНАБЖЕНИЯ</th><th>ДОБАВЛЕНО</th>{% if can_resolve %}<th></th>{% endif %}
+    <th>БЛЮДО</th><th>ПРИЧИНА</th><th>КОММ. ФИЛИАЛА</th><th>КОММ. СНАБЖЕНИЯ</th><th>ДОБАВЛЕНО</th>{% if can_resolve %}<th></th>{% endif %}
   </tr></thead>
   <tbody>
     {% for e in rows %}
     <tr>
       <td data-label="Блюдо"><b>{{ e.menu_item.name if e.menu_item else "—" }}</b></td>
       <td data-label="Причина"><span class="tag" style="background:#fef3c7;color:#b45309">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
-      <td data-label="Комментарий">
+      <td data-label="Комм. филиала">{{ e.comment or "—" }}</td>
+      <td data-label="Комм. снабжения">
         {% if can_comment %}
-        <form method="post" action="/stoplist/{{ e.id }}/comment" autocomplete="off" style="display:flex;gap:6px;margin:0;min-width:220px">
-          <input type="text" name="comment" value="{{ e.comment or '' }}" autocomplete="off" class="inp" style="padding:6px 8px;font-size:13px" placeholder="Комментарий...">
+        <form method="post" action="/stoplist/{{ e.id }}/comment" autocomplete="off" style="display:flex;gap:6px;margin:0;min-width:200px">
+          <input type="text" name="comment" value="{{ e.supply_comment or '' }}" autocomplete="off" class="inp" style="padding:6px 8px;font-size:13px" placeholder="Комментарий...">
           <button type="submit" class="btn btn-light" style="padding:6px 10px" title="Сохранить">✓</button>
         </form>
-        {% else %}{{ e.comment or "—" }}{% endif %}
+        {% else %}{{ e.supply_comment or "—" }}{% endif %}
       </td>
       <td data-label="Добавлено" style="color:#94a3b8;font-size:13px">{{ e.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
       {% if can_resolve %}
@@ -81,6 +82,9 @@
             <option value="">— выберите причину —</option>
             {% for rk, rl in REASON_LABELS.items() %}<option value="{{ rk }}">{{ rl }}</option>{% endfor %}
           </select>
+        </div>
+        <div class="field"><label>Комментарий <span style="color:#94a3b8;font-weight:400">(необязательно)</span></label>
+          <textarea name="comment" class="inp" style="width:100%;min-height:60px;padding:10px" placeholder="Дополнительно..."></textarea>
         </div>
         <button type="submit" class="btn btn-blue">＋ Добавить в стоп-лист</button>
       </div>

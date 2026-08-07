@@ -229,7 +229,8 @@ class StopEntry(Base):
     branch_id = Column(Integer, ForeignKey("branches.id", ondelete="CASCADE"), nullable=False)
     menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False)
     reason = Column(String(40), nullable=False)       # sabab kaliti
-    comment = Column(Text, default="")
+    comment = Column(Text, default="")               # filial izohi
+    supply_comment = Column(Text, default="")         # Снабжение izohi
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=tashkent_now)
     resolved = Column(Boolean, default=False)

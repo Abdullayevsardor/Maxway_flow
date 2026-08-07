@@ -32,7 +32,8 @@ def _ensure_columns():
               ("branches", "phone", "VARCHAR(40) DEFAULT ''"),
               ("branches", "director_name", "VARCHAR(120) DEFAULT ''"),
               ("notifications", "from_name", "VARCHAR(120)"),
-              ("stop_entries", "resolved_at", "TIMESTAMP")]
+              ("stop_entries", "resolved_at", "TIMESTAMP"),
+              ("stop_entries", "supply_comment", "TEXT DEFAULT ''")]
     try:
         insp = sa_inspect(engine)
         tables = insp.get_table_names()
@@ -1358,7 +1359,8 @@ def stoplist_menu_page(request: Request, sync: str = "", db: Session = Depends(g
 
 @app.post("/stoplist/add")
 def stoplist_add(request: Request, menu_name: List[str] = Form([]),
-                 reason: str = Form(...), db: Session = Depends(get_db)):
+                 reason: str = Form(...), comment: str = Form(""),
+                 db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.client or not user.user_branch_id:
         return RedirectResponse("/login", 302)
@@ -1377,7 +1379,7 @@ def stoplist_add(request: Request, menu_name: List[str] = Form([]),
             models.StopEntry.resolved == False).first()
         if not exists:
             db.add(models.StopEntry(branch_id=user.user_branch_id, menu_item_id=mi.id,
-                   reason=reason, comment="", created_by=user.id))
+                   reason=reason, comment=comment.strip(), created_by=user.id))
             added += 1
     if added:
         db.commit()
@@ -1387,13 +1389,13 @@ def stoplist_add(request: Request, menu_name: List[str] = Form([]),
 @app.post("/stoplist/{sid}/comment")
 def stoplist_comment(sid: int, request: Request, comment: str = Form(""),
                      db: Session = Depends(get_db)):
-    """Снабжение xodimi stop yozuviga izoh qo'shadi/tahrirlaydi."""
+    """Снабжение xodimi o'z izohini (supply_comment) qo'shadi/tahrirlaydi."""
     user = current_user(request, db)
     if not user or not is_supply(user):
         return RedirectResponse("/login", 302)
     e = db.get(models.StopEntry, sid)
     if e:
-        e.comment = comment.strip()
+        e.supply_comment = comment.strip()
         db.commit()
     return RedirectResponse("/stoplist", 302)
 
@@ -1531,12 +1533,12 @@ def stoplist_export(request: Request, mode: str = "active", db: Session = Depend
     order = models.StopEntry.resolved_at.desc().nullslast() if resolved else models.StopEntry.created_at.desc()
     entries = q.order_by(order).all()
 
-    headers = ["Филиал", "Блюдо", "Причина", "Комментарий", "Добавлено"] + (["Убрано"] if resolved else [])
-    widths = (24, 34, 26, 34, 18) + ((18,) if resolved else ())
+    headers = ["Филиал", "Блюдо", "Причина", "Комм. филиала", "Комм. снабжения", "Добавлено"] + (["Убрано"] if resolved else [])
+    widths = (24, 34, 26, 30, 30, 18) + ((18,) if resolved else ())
 
     def row(e):
         r = [e.branch.name if e.branch else "", e.menu_item.name if e.menu_item else "",
-             REASON_LABELS.get(e.reason, e.reason), e.comment or "",
+             REASON_LABELS.get(e.reason, e.reason), e.comment or "", e.supply_comment or "",
              e.created_at.strftime("%d.%m.%Y %H:%M")]
         if resolved:
             r.append(e.resolved_at.strftime("%d.%m.%Y %H:%M") if e.resolved_at else "")
@@ -1546,7 +1548,7 @@ def stoplist_export(request: Request, mode: str = "active", db: Session = Depend
         ws.append(headers)
         for e in items:
             ws.append(row(e))
-        for col, w in zip("ABCDEF", widths):
+        for col, w in zip("ABCDEFG", widths):
             ws.column_dimensions[col].width = w
 
     wb = openpyxl.Workbook()
