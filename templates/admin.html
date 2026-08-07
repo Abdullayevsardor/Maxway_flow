@@ -257,6 +257,23 @@
       tr.style.display = tr.innerText.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
     });
   }
+  // Qatorga bosilganda Изменить oynasini ochish
+  document.addEventListener('DOMContentLoaded', function(){
+    ['userRows','catRows','branchRows'].forEach(function(id){
+      var tb = document.getElementById(id);
+      if(!tb) return;
+      tb.querySelectorAll('tr').forEach(function(tr){
+        var btn = tr.querySelector('button[onclick^="edit"]');
+        if(!btn) return;
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('click', function(e){
+          // oxirgi ustun (tugmalar) ichida bosilса — o'z ishini qilsin
+          if(e.target.closest('td:last-child')) return;
+          btn.click();
+        });
+      });
+    });
+  });
   function open_(n){document.getElementById('modal-'+n).classList.add('open')}
   function close_(n){document.getElementById('modal-'+n).classList.remove('open')}
   document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
