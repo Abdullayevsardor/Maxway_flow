@@ -1308,7 +1308,8 @@ def stoplist_page(request: Request, sync: str = "", db: Session = Depends(get_db
     return templates.TemplateResponse(request, "stoplist.html", {
         "request": request, "user": user, "active": "stoplist",
         "menu_items": menu_items, "entries": entries, "is_client": is_client,
-        "can_resolve": is_supply(user) or is_client, "sync_msg": sync,
+        "can_resolve": is_supply(user) or is_client,
+        "can_comment": is_supply(user), "sync_msg": sync,
     })
 
 
@@ -1346,8 +1347,7 @@ def stoplist_menu_page(request: Request, sync: str = "", db: Session = Depends(g
 
 @app.post("/stoplist/add")
 def stoplist_add(request: Request, menu_name: List[str] = Form([]),
-                 reason: str = Form(...), comment: str = Form(""),
-                 db: Session = Depends(get_db)):
+                 reason: str = Form(...), db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.client or not user.user_branch_id:
         return RedirectResponse("/login", 302)
@@ -1366,9 +1366,23 @@ def stoplist_add(request: Request, menu_name: List[str] = Form([]),
             models.StopEntry.resolved == False).first()
         if not exists:
             db.add(models.StopEntry(branch_id=user.user_branch_id, menu_item_id=mi.id,
-                   reason=reason, comment=comment.strip(), created_by=user.id))
+                   reason=reason, comment="", created_by=user.id))
             added += 1
     if added:
+        db.commit()
+    return RedirectResponse("/stoplist", 302)
+
+
+@app.post("/stoplist/{sid}/comment")
+def stoplist_comment(sid: int, request: Request, comment: str = Form(""),
+                     db: Session = Depends(get_db)):
+    """Снабжение xodimi stop yozuviga izoh qo'shadi/tahrirlaydi."""
+    user = current_user(request, db)
+    if not user or not is_supply(user):
+        return RedirectResponse("/login", 302)
+    e = db.get(models.StopEntry, sid)
+    if e:
+        e.comment = comment.strip()
         db.commit()
     return RedirectResponse("/stoplist", 302)
 
