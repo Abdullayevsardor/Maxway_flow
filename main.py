@@ -931,6 +931,8 @@ def analytics_page(request: Request, db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
+    if user.role not in (Role.admin, Role.viewer):
+        return RedirectResponse("/dashboard", 302)
     base = db.query(models.Request)
     total = base.count()
     status_stats = {s: base.filter(models.Request.status == s).count() for s in Status}
@@ -1481,34 +1483,65 @@ def stoplist_menu_clear(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse("/stoplist/menu?sync=" + urllib.parse.quote("Меню очищено"), 302)
 
 
+def _xlsx_title(name, used):
+    bad = '[]:*?/\\'
+    t = "".join(c for c in (name or "—") if c not in bad)[:28] or "Лист"
+    base = t; i = 2
+    while t in used:
+        t = f"{base[:25]} {i}"; i += 1
+    used.add(t); return t
+
+
 @app.get("/stoplist/export")
-def stoplist_export(request: Request, db: Session = Depends(get_db)):
+def stoplist_export(request: Request, mode: str = "active", db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or not can_see_stoplist(user):
         return RedirectResponse("/login", 302)
     import openpyxl, io
     from fastapi.responses import StreamingResponse
-    q = db.query(models.StopEntry).filter(models.StopEntry.resolved == False)
+    resolved = (mode == "history")
+    q = db.query(models.StopEntry).filter(models.StopEntry.resolved == resolved)
     if user.role == Role.client:
         q = q.filter(models.StopEntry.branch_id == user.user_branch_id)
-    entries = q.order_by(models.StopEntry.created_at.desc()).all()
+    order = models.StopEntry.resolved_at.desc().nullslast() if resolved else models.StopEntry.created_at.desc()
+    entries = q.order_by(order).all()
+
+    headers = ["Филиал", "Блюдо", "Причина", "Комментарий", "Добавлено"] + (["Убрано"] if resolved else [])
+    widths = (24, 34, 26, 34, 18) + ((18,) if resolved else ())
+
+    def row(e):
+        r = [e.branch.name if e.branch else "", e.menu_item.name if e.menu_item else "",
+             REASON_LABELS.get(e.reason, e.reason), e.comment or "",
+             e.created_at.strftime("%d.%m.%Y %H:%M")]
+        if resolved:
+            r.append(e.resolved_at.strftime("%d.%m.%Y %H:%M") if e.resolved_at else "")
+        return r
+
+    def fill(ws, items):
+        ws.append(headers)
+        for e in items:
+            ws.append(row(e))
+        for col, w in zip("ABCDEF", widths):
+            ws.column_dimensions[col].width = w
+
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Стоп-лист"
-    ws.append(["Филиал", "Блюдо", "Причина", "Комментарий", "Добавлено"])
-    for e in entries:
-        ws.append([
-            e.branch.name if e.branch else "",
-            e.menu_item.name if e.menu_item else "",
-            REASON_LABELS.get(e.reason, e.reason),
-            e.comment or "",
-            e.created_at.strftime("%d.%m.%Y %H:%M"),
-        ])
-    for col, w in zip("ABCDE", (24, 34, 26, 34, 18)):
-        ws.column_dimensions[col].width = w
+    ws.title = "Все филиалы"
+    fill(ws, entries)
+    # har bir filial uchun alohida varaq (klient bo'lmasa)
+    if user.role != Role.client:
+        by_branch = {}
+        for e in entries:
+            bn = e.branch.name if e.branch else "—"
+            by_branch.setdefault(bn, []).append(e)
+        used = {"Все филиалы"}
+        for bn in sorted(by_branch):
+            fill(wb.create_sheet(_xlsx_title(bn, used)), by_branch[bn])
+
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
-    fname = f"stop-list-{(datetime.utcnow() + timedelta(hours=5)).strftime('%Y%m%d-%H%M')}.xlsx"
+    tag = "istoriya" if resolved else "stop-list"
+    fname = f"{tag}-{(datetime.utcnow() + timedelta(hours=5)).strftime('%Y%m%d-%H%M')}.xlsx"
     return StreamingResponse(
         buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'})

@@ -1,21 +1,42 @@
 {% extends "base.html" %}
 {% block title %}Стоп-лист{% endblock %}
 {% block content %}
+{% macro stop_table(rows, show_branch, can_resolve) %}
+<table>
+  <thead><tr>
+    <th>БЛЮДО</th><th>ПРИЧИНА</th><th>КОММЕНТАРИЙ</th><th>ДОБАВЛЕНО</th>{% if can_resolve %}<th></th>{% endif %}
+  </tr></thead>
+  <tbody>
+    {% for e in rows %}
+    <tr>
+      <td data-label="Блюдо"><b>{{ e.menu_item.name if e.menu_item else "—" }}</b></td>
+      <td data-label="Причина"><span class="tag" style="background:#fef3c7;color:#b45309">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
+      <td data-label="Комментарий">{{ e.comment or "—" }}</td>
+      <td data-label="Добавлено" style="color:#94a3b8;font-size:13px">{{ e.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+      {% if can_resolve %}
+      <td>
+        <form method="post" action="/stoplist/{{ e.id }}/resolve" style="margin:0" onsubmit="return confirm('Убрать из стоп-листа?')">
+          <button type="submit" class="btn btn-light" style="color:#16a34a;border-color:#86efac">✓ Убрать</button>
+        </form>
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
 
 <div class="page-head">
   <div><h1>🛑 Стоп-лист</h1>
     <p>{% if is_client %}Отметьте блюда, которых нет в наличии{% else %}Блюда на стопе по филиалам{% endif %}</p></div>
   <div class="head-actions">
-    {% if entries %}
-    <a href="/stoplist/export" class="btn btn-light">⬇ Скачать Excel</a>
-    {% endif %}
+    {% if entries %}<a href="/stoplist/export?mode=active" class="btn btn-light">⬇ Скачать Excel</a>{% endif %}
   </div>
 </div>
 
 {% if sync_msg %}
-<div style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:12px 16px;border-radius:12px;margin-bottom:16px">
-  {{ sync_msg }}
-</div>
+<div style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:12px 16px;border-radius:12px;margin-bottom:16px">{{ sync_msg }}</div>
 {% endif %}
 
 {% if is_client %}
@@ -23,24 +44,29 @@
   <div class="panel-head"><div class="title">Добавить в стоп-лист</div></div>
   <div class="panel-body">
     {% if menu_items %}
+    <style>
+      .menu-chip{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--border);border-radius:999px;cursor:pointer;font-size:14px;background:#fff;user-select:none;transition:all .12s}
+      .menu-chip input{display:none}
+      .menu-chip:hover{border-color:#93c5fd;background:#f8fafc}
+      .menu-chip:has(input:checked){background:#2563eb;border-color:#2563eb;color:#fff}
+      .sel-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#2563eb;color:#fff;font-size:13px}
+      .sel-chip b{cursor:pointer;font-size:16px;line-height:1}
+      .pick-head{position:sticky;top:0;background:var(--card,#fff);padding-bottom:10px;z-index:3}
+    </style>
     <form method="post" action="/stoplist/add">
       <div class="field"><label>Блюда (меню) · {{ menu_items|length }} шт. <span style="color:#94a3b8;font-weight:400">— можно выбрать несколько</span></label>
-        <input type="text" id="menuSearch" class="inp" placeholder="🔍 Поиск блюда..." autocomplete="off" oninput="filterMenu()">
-        <style>
-          .menu-chip{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--border);border-radius:999px;cursor:pointer;font-size:14px;background:#fff;user-select:none;transition:all .12s}
-          .menu-chip input{display:none}
-          .menu-chip:hover{border-color:#93c5fd}
-          .menu-chip:has(input:checked){background:#2563eb;border-color:#2563eb;color:#fff}
-        </style>
-        <div id="menuList" style="display:flex;flex-wrap:wrap;gap:8px;max-height:300px;overflow:auto;margin-top:8px;padding:4px">
+        <div class="pick-head">
+          <div id="selectedChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+          <input type="text" id="menuSearch" class="inp" placeholder="🔍 Поиск блюда..." autocomplete="off" oninput="filterMenu()">
+        </div>
+        <div id="menuList" style="display:flex;flex-wrap:wrap;gap:8px;max-height:280px;overflow:auto;padding:6px;border:1px solid var(--border);border-radius:12px">
           {% for m in menu_items %}
           <label class="menu-chip" data-name="{{ m.name|lower }}">
-            <input type="checkbox" name="menu_name" value="{{ m.name }}" onchange="onPick()">
+            <input type="checkbox" name="menu_name" value="{{ m.name }}" onchange="refreshSel()">
             <span>{{ m.name }}</span>
           </label>
           {% endfor %}
         </div>
-        <div id="pickCount" style="margin-top:8px;font-size:14px;color:#2563eb;font-weight:600"></div>
       </div>
       <div id="reasonBox" style="display:none">
         <div class="field"><label>Причина <span style="color:#94a3b8;font-weight:400">(для всех выбранных)</span></label>
@@ -62,14 +88,21 @@
           el.style.display = el.dataset.name.indexOf(q)>=0 ? 'inline-flex':'none';
         });
       }
-      function onPick(){
-        var n=document.querySelectorAll('#menuList input:checked').length;
-        document.getElementById('reasonBox').style.display = n>0 ? 'block':'none';
-        document.getElementById('pickCount').textContent = n ? ('✓ Выбрано: '+n) : '';
+      function refreshSel(){
+        var checked=document.querySelectorAll('#menuList input:checked');
+        var box=document.getElementById('selectedChips');
+        box.innerHTML='';
+        checked.forEach(function(cb){
+          var s=document.createElement('span'); s.className='sel-chip';
+          s.innerHTML='<span>'+cb.value+'</span> <b>×</b>';
+          s.querySelector('b').onclick=function(){cb.checked=false;refreshSel();};
+          box.appendChild(s);
+        });
+        document.getElementById('reasonBox').style.display = checked.length ? 'block':'none';
       }
     </script>
     {% else %}
-    <p style="color:#94a3b8;margin:0">Меню пока пусто. Обратитесь к администратору, чтобы загрузить меню.</p>
+    <p style="color:#94a3b8;margin:0">Меню пока пусто. Обратитесь к менеджеру снабжения, чтобы загрузить меню.</p>
     {% endif %}
   </div>
 </div>
@@ -77,39 +110,23 @@
 
 <div class="panel">
   <div class="panel-head"><div class="title">
-    {% if is_client %}Мой стоп-лист{% else %}Стоп-лист · все филиалы{% endif %}
+    {% if is_client %}Мой стоп-лист{% else %}Стоп-лист · по филиалам{% endif %}
     <span class="badge">{{ entries|length }}</span></div></div>
   <div class="panel-body">
-    {% if entries %}
-    <table>
-      <thead><tr>
-        {% if not is_client %}<th>ФИЛИАЛ</th>{% endif %}
-        <th>БЛЮДО</th><th>ПРИЧИНА</th><th>КОММЕНТАРИЙ</th><th>ДОБАВЛЕНО</th>{% if can_resolve %}<th></th>{% endif %}
-      </tr></thead>
-      <tbody>
-        {% for e in entries %}
-        <tr>
-          {% if not is_client %}<td data-label="Филиал">{{ e.branch.name if e.branch else "—" }}</td>{% endif %}
-          <td data-label="Блюдо"><b>{{ e.menu_item.name if e.menu_item else "—" }}</b></td>
-          <td data-label="Причина"><span class="tag" style="background:#fef3c7;color:#b45309">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
-          <td data-label="Комментарий">{{ e.comment or "—" }}</td>
-          <td data-label="Добавлено" style="color:#94a3b8;font-size:13px">{{ e.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
-          {% if can_resolve %}
-          <td>
-            <form method="post" action="/stoplist/{{ e.id }}/resolve" style="margin:0"
-                  onsubmit="return confirm('Убрать из стоп-листа?')">
-              <button type="submit" class="btn btn-light" style="color:#16a34a;border-color:#86efac">✓ Убрать</button>
-            </form>
-          </td>
-          {% endif %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
+    {% if not entries %}
     <p style="color:#94a3b8;margin:0">Стоп-лист пуст 🎉</p>
+    {% elif is_client %}
+    {{ stop_table(entries, false, can_resolve) }}
+    {% else %}
+    {% for branch_name, items in entries|groupby('branch.name') %}
+    <div style="margin-bottom:22px">
+      <div style="font-weight:700;color:#1e293b;font-size:15px;margin-bottom:8px">🏪 {{ branch_name or '—' }} <span class="badge">{{ items|length }}</span></div>
+      {{ stop_table(items, false, can_resolve) }}
+    </div>
+    {% endfor %}
     {% endif %}
   </div>
 </div>
+
 
 {% endblock %}

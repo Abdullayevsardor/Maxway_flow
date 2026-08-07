@@ -38,6 +38,8 @@
       {% if user.role.value in ['admin','manager','executor','viewer'] %}
       <a href="/executors" class="{{ 'active' if active=='executors' }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>Исполнители</a>
+      {% endif %}
+      {% if user.role.value in ['admin','viewer'] %}
       <a href="/analytics" class="{{ 'active' if active=='analytics' }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>Аналитика</a>
       {% endif %}
