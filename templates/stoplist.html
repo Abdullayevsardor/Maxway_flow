@@ -14,8 +14,8 @@
       <td data-label="Причина"><span class="tag" style="background:#fef3c7;color:#b45309">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
       <td data-label="Комментарий">
         {% if can_comment %}
-        <form method="post" action="/stoplist/{{ e.id }}/comment" style="display:flex;gap:6px;margin:0;min-width:220px">
-          <input type="text" name="comment" value="{{ e.comment or '' }}" class="inp" style="padding:6px 8px;font-size:13px" placeholder="Комментарий...">
+        <form method="post" action="/stoplist/{{ e.id }}/comment" autocomplete="off" style="display:flex;gap:6px;margin:0;min-width:220px">
+          <input type="text" name="comment" value="{{ e.comment or '' }}" autocomplete="off" class="inp" style="padding:6px 8px;font-size:13px" placeholder="Комментарий...">
           <button type="submit" class="btn btn-light" style="padding:6px 10px" title="Сохранить">✓</button>
         </form>
         {% else %}{{ e.comment or "—" }}{% endif %}
@@ -58,7 +58,7 @@
       .menu-chip:has(input:checked){background:#2563eb;border-color:#2563eb;color:#fff}
       .sel-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#2563eb;color:#fff;font-size:13px}
       .sel-chip b{cursor:pointer;font-size:16px;line-height:1}
-      .pick-head{position:sticky;top:66px;background:var(--card,#fff);padding:12px 0 10px;z-index:5;border-bottom:1px solid var(--border);margin-bottom:10px}
+      .pick-head{background:var(--card,#fff);padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--border)}
     </style>
     <form method="post" action="/stoplist/add">
       <div class="field"><label>Блюда (меню) · {{ menu_items|length }} шт. <span style="color:#94a3b8;font-weight:400">— можно выбрать несколько</span></label>
@@ -66,7 +66,7 @@
           <div id="selectedChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
           <input type="text" id="menuSearch" class="inp" placeholder="🔍 Поиск блюда..." autocomplete="off" oninput="filterMenu()">
         </div>
-        <div id="menuList" style="display:flex;flex-wrap:wrap;gap:8px;padding:4px">
+        <div id="menuList" style="display:flex;flex-wrap:wrap;gap:8px;padding:8px;max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:12px">
           {% for m in menu_items %}
           <label class="menu-chip" data-name="{{ m.name|lower }}">
             <input type="checkbox" name="menu_name" value="{{ m.name }}" onchange="refreshSel()">
@@ -75,7 +75,7 @@
           {% endfor %}
         </div>
       </div>
-      <div id="reasonBox" style="display:none;position:sticky;bottom:0;background:var(--card,#fff);padding-top:12px;border-top:1px solid var(--border)">
+      <div id="reasonBox" style="display:none;margin-top:14px">
         <div class="field"><label>Причина <span style="color:#94a3b8;font-weight:400">(для всех выбранных)</span></label>
           <select name="reason" class="inp" required>
             <option value="">— выберите причину —</option>

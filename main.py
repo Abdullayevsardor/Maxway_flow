@@ -143,6 +143,17 @@ _admin_tools()
 
 app = FastAPI(title="MAXWAY")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.middleware("http")
+async def _no_cache(request: Request, call_next):
+    """Sahifalar keshda saqlanmasin (eski qiymatlar ko'rinmasin). Statika keshlanaveradi."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 templates = Jinja2Templates(directory="templates")
 print(">>> [MAXWAY] ilova tayyor ✅", flush=True)
 
