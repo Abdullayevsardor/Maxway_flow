@@ -456,10 +456,13 @@ def create_request(request: Request, title: str = Form(...), description: str = 
             branch_name = b.name
             branch_phone = b.phone or ""
             branch_director = b.director_name or ""
-    # forma endi buyurtmachi maydonlarini so'ramaydi — avtomatik to'ldiramiz
-    # Заказчик = filial direktori (bo'lmasa filial nomi yoki foydalanuvchi)
-    cust_name = customer_name.strip() or user.full_name or branch_director or branch_name
-    cust_phone = customer_phone.strip() or (user.phone or "") or branch_phone
+    # Заказчик: filial bo'lsa — direktor ismi; boshqalar — profil ismi
+    if user.role == Role.client:
+        cust_name = customer_name.strip() or branch_director or user.full_name or branch_name
+        cust_phone = customer_phone.strip() or branch_phone or (user.phone or "")
+    else:
+        cust_name = customer_name.strip() or user.full_name
+        cust_phone = customer_phone.strip() or (user.phone or "")
     cust_email = customer_email.strip() or user.email
     r = models.Request(title=title.strip(), description=description.strip(),
                        department_id=department_id,
@@ -813,8 +816,15 @@ def profile_update(request: Request, full_name: str = Form(...), phone: str = Fo
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
-    user.full_name = full_name.strip()
-    user.phone = phone.strip()
+    # filial (client) bo'lsa — ism/telefon filial direktoriga yoziladi (filial nomi o'zgarmaydi)
+    if user.role == Role.client and user.user_branch_id:
+        b = db.get(models.Branch, user.user_branch_id)
+        if b:
+            b.director_name = full_name.strip()
+            b.phone = phone.strip()
+    else:
+        user.full_name = full_name.strip()
+        user.phone = phone.strip()
     user.bio = bio.strip()
     user.telegram_chat_id = telegram_chat_id.strip() or None
     # rasm yuklash

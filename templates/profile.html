@@ -39,9 +39,11 @@
     <div class="panel-body">
       <div style="display:flex;gap:14px;flex-wrap:wrap">
         <div class="field" style="flex:1;min-width:200px"><label>Имя <span style="color:#94a3b8;font-weight:400">(отображается как Заказчик в заявках)</span></label>
-          <input type="text" name="full_name" value="{{ user.full_name }}" required></div>
+          <input type="text" name="full_name" required
+                 value="{% if user.role.value == 'client' and user.branch %}{{ user.branch.director_name or '' }}{% else %}{{ user.full_name }}{% endif %}"></div>
         <div class="field" style="flex:1;min-width:200px"><label>Телефон <span style="color:#94a3b8;font-weight:400">(в заявках)</span></label>
-          <input type="text" name="phone" value="{{ user.phone or '+998 ' }}" placeholder="+998 90 123 45 67"></div>
+          <input type="text" name="phone" placeholder="+998 90 123 45 67"
+                 value="{% if user.role.value == 'client' and user.branch %}{{ user.branch.phone or '+998 ' }}{% else %}{{ user.phone or '+998 ' }}{% endif %}"></div>
       </div>
       <div class="field"><label>Email (изменить нельзя)</label>
         <input type="email" value="{{ user.email }}" disabled style="background:#f1f5f9;color:#94a3b8"></div>
