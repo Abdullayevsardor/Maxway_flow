@@ -94,7 +94,9 @@
           <div style="font-size:12px;color:#94a3b8">JPG, PNG — можно несколько</div>
         </div>
         <label class="btn btn-light" style="margin:0;cursor:pointer">Выбрать
-          <input type="file" name="photos" id="photoInp" accept="image/*" multiple hidden onchange="showCnt(this,'photoCnt')"></label>
+          <input type="file" name="photos" id="photoInp" accept="image/*" multiple
+                 style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden"
+                 onchange="showCnt(this,'photoCnt')"></label>
       </div>
       <div id="photoCnt" class="upload-cnt"></div>
 
@@ -105,7 +107,9 @@
           <div style="font-size:12px;color:#94a3b8">MP4, MOV — можно несколько</div>
         </div>
         <label class="btn btn-light" style="margin:0;cursor:pointer">Выбрать
-          <input type="file" name="videos" id="videoInp" accept="video/*" multiple hidden onchange="showCnt(this,'videoCnt')"></label>
+          <input type="file" name="videos" id="videoInp" accept="video/*" multiple
+                 style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden"
+                 onchange="showCnt(this,'videoCnt')"></label>
       </div>
       <div id="videoCnt" class="upload-cnt"></div>
       <div class="modal-actions">

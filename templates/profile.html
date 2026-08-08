@@ -38,9 +38,9 @@
     <div class="panel-head"><div class="title">👤 Редактировать профиль</div></div>
     <div class="panel-body">
       <div style="display:flex;gap:14px;flex-wrap:wrap">
-        <div class="field" style="flex:1;min-width:200px"><label>Полное имя</label>
+        <div class="field" style="flex:1;min-width:200px"><label>Имя <span style="color:#94a3b8;font-weight:400">(отображается как Заказчик в заявках)</span></label>
           <input type="text" name="full_name" value="{{ user.full_name }}" required></div>
-        <div class="field" style="flex:1;min-width:200px"><label>Телефон</label>
+        <div class="field" style="flex:1;min-width:200px"><label>Телефон <span style="color:#94a3b8;font-weight:400">(в заявках)</span></label>
           <input type="text" name="phone" value="{{ user.phone or '+998 ' }}" placeholder="+998 90 123 45 67"></div>
       </div>
       <div class="field"><label>Email (изменить нельзя)</label>

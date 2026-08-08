@@ -437,6 +437,8 @@ def create_request(request: Request, title: str = Form(...), description: str = 
         return RedirectResponse("/login", 302)
     if user.role in (Role.executor, Role.viewer):
         return RedirectResponse("/requests", 302)
+    if not title.strip():
+        return RedirectResponse("/requests?err=title", 302)
     dl = None
     if deadline:
         try:
@@ -456,8 +458,8 @@ def create_request(request: Request, title: str = Form(...), description: str = 
             branch_director = b.director_name or ""
     # forma endi buyurtmachi maydonlarini so'ramaydi — avtomatik to'ldiramiz
     # Заказчик = filial direktori (bo'lmasa filial nomi yoki foydalanuvchi)
-    cust_name = customer_name.strip() or branch_director or branch_name or user.full_name
-    cust_phone = customer_phone.strip() or branch_phone or (user.phone or "")
+    cust_name = customer_name.strip() or user.full_name or branch_director or branch_name
+    cust_phone = customer_phone.strip() or (user.phone or "") or branch_phone
     cust_email = customer_email.strip() or user.email
     r = models.Request(title=title.strip(), description=description.strip(),
                        department_id=department_id,
