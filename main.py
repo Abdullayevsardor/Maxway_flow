@@ -69,9 +69,9 @@ def _ensure_enum_values():
                 "WHERE e.enumlabel='executor' LIMIT 1")).first()
             if row:
                 tname = row[0]
-                for val in ("viewer",):
+                for val in ("viewer", "kpp"):
                     conn.execute(text(f"ALTER TYPE {tname} ADD VALUE IF NOT EXISTS '{val}'"))
-                print(f">>> [MAXWAY] enum '{tname}' ga viewer qo'shildi", flush=True)
+                print(f">>> [MAXWAY] enum '{tname}' ga viewer/kpp qo'shildi", flush=True)
         finally:
             conn.close()
     except Exception as e:
@@ -163,7 +163,7 @@ STATUS_LABELS = {
     "done": "Выполнена", "rejected": "Отклонена",
 }
 PRIORITY_LABELS = {"low": "Низкий", "medium": "Средний", "high": "Высокий"}
-ROLE_LABELS = {"admin": "АДМИН", "manager": "МЕНЕДЖЕР", "executor": "ИСПОЛНИТЕЛЬ", "client": "ЗАКАЗЧИК", "viewer": "ПРОСМОТР"}
+ROLE_LABELS = {"admin": "АДМИН", "manager": "МЕНЕДЖЕР", "executor": "ИСПОЛНИТЕЛЬ", "client": "ЗАКАЗЧИК", "viewer": "ПРОСМОТР", "kpp": "КПП"}
 # Stop-list sabablari
 REASON_LABELS = {
     "sales_growth": "Рост продаж",
@@ -236,6 +236,9 @@ def base_requests(db: Session, user):
     q = db.query(models.Request)
     if user.role == Role.client:
         q = q.filter(models.Request.branch_id == user.user_branch_id)
+    elif user.role == Role.kpp:
+        ids = [b.id for b in user.visible_branches]
+        q = q.filter(models.Request.branch_id.in_(ids if ids else [-1]))
     elif user.role in (Role.admin, Role.manager, Role.executor) and user.department_id:
         q = q.filter(models.Request.department_id == user.department_id)
     return q
@@ -435,7 +438,7 @@ def create_request(request: Request, title: str = Form(...), description: str = 
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
-    if user.role in (Role.executor, Role.viewer):
+    if user.role in (Role.executor, Role.viewer, Role.kpp):
         return RedirectResponse("/requests", 302)
     if not title.strip():
         return RedirectResponse("/requests?err=title", 302)
@@ -709,7 +712,7 @@ def change_status(req_id: int, request: Request, status: str = Form(...),
 def add_comment(req_id: int, request: Request, text: str = Form(...),
                 db: Session = Depends(get_db)):
     user = current_user(request, db)
-    if not user or user.role == Role.viewer:
+    if not user or user.role in (Role.viewer, Role.kpp):
         return RedirectResponse("/login", 302)
     r = db.get(models.Request, req_id)
     if r and text.strip():
@@ -1057,17 +1060,22 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
 def admin_user_create(request: Request, full_name: str = Form(...), email: str = Form(...),
                       password: str = Form("12345678"), role: str = Form("executor"),
                       department_id: Optional[int] = Form(None), phone: str = Form(""),
-                      telegram_chat_id: str = Form(""), db: Session = Depends(get_db)):
+                      telegram_chat_id: str = Form(""), kpp_branch_ids: List[int] = Form([]),
+                      db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
     email = email.lower().strip()
     if not db.query(models.User).filter(models.User.email == email).first():
-        db.add(models.User(full_name=full_name.strip(), email=email,
-                           hashed_password=auth.hash_password(password or "12345678"),
-                           role=Role(role), department_id=department_id,
-                           phone=phone.strip(), telegram_chat_id=telegram_chat_id.strip(),
-                           is_active=True))
+        nu = models.User(full_name=full_name.strip(), email=email,
+                         hashed_password=auth.hash_password(password or "12345678"),
+                         role=Role(role), department_id=department_id,
+                         phone=phone.strip(), telegram_chat_id=telegram_chat_id.strip(),
+                         is_active=True)
+        if role == "kpp" and kpp_branch_ids:
+            nu.visible_branches = db.query(models.Branch).filter(
+                models.Branch.id.in_(kpp_branch_ids)).all()
+        db.add(nu)
         db.commit()
     return RedirectResponse("/admin", 302)
 
@@ -1110,7 +1118,8 @@ def admin_user_edit(uid: int, request: Request, full_name: str = Form(...),
                     email: str = Form(""), role: str = Form("executor"),
                     department_id: Optional[int] = Form(None),
                     phone: str = Form(""), telegram_chat_id: str = Form(""),
-                    password: str = Form(""), db: Session = Depends(get_db)):
+                    password: str = Form(""), kpp_branch_ids: List[int] = Form([]),
+                    db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
@@ -1128,6 +1137,12 @@ def admin_user_edit(uid: int, request: Request, full_name: str = Form(...),
         p.department_id = department_id
         p.phone = phone.strip()
         p.telegram_chat_id = telegram_chat_id.strip()
+        # КПП filiallari
+        if role == "kpp":
+            p.visible_branches = db.query(models.Branch).filter(
+                models.Branch.id.in_(kpp_branch_ids)).all() if kpp_branch_ids else []
+        else:
+            p.visible_branches = []
         # parol — faqat kiritilgan bo'lsa o'zgartiramiz
         if password.strip():
             p.hashed_password = auth.hash_password(password.strip())

@@ -26,7 +26,7 @@
         <td data-label="Категория">{% if u.department %}{{ u.department.name }}{% else %}—{% endif %}</td>
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
-            onclick='editUser({{ {"id":u.id,"full_name":u.full_name,"email":u.email,"role":u.role.value,"department_id":u.department_id or "","phone":u.phone or "","telegram_chat_id":u.telegram_chat_id or ""}|tojson }})'>✏ Изменить</button>
+            onclick='editUser({{ {"id":u.id,"full_name":u.full_name,"email":u.email,"role":u.role.value,"department_id":u.department_id or "","phone":u.phone or "","telegram_chat_id":u.telegram_chat_id or "","kpp_branch_ids":u.visible_branches|map(attribute="id")|list}|tojson }})'>✏ Изменить</button>
           {% if u.id != user.id %}
           <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline"
                 onsubmit="return confirm({% set c = req_counts.get(u.id, 0) %}{% if c %}'⚠️ У «{{ u.full_name }}» есть {{ c }} заявок(и). При удалении пользователя ВСЕ его заявки будут удалены безвозвратно!\n\nВсё равно удалить?'{% else %}'Удалить «{{ u.full_name }}»?'{% endif %})">
@@ -119,11 +119,19 @@
       </div>
       <div style="display:flex;gap:12px">
         <div class="field" style="flex:1"><label>Роль</label>
-          <select name="role"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="viewer">Просмотр</option><option value="client">Заказчик</option></select></div>
+          <select name="role" onchange="toggleKpp(this,'kppBox')"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="viewer">Просмотр</option><option value="kpp">КПП</option><option value="client">Заказчик</option></select></div>
         <div class="field" style="flex:1"><label>Категория</label>
           <select name="department_id"><option value="">— нет —</option>
             {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
           </select></div>
+      </div>
+      <div class="field" id="kppBox" style="display:none">
+        <label>Филиалы для КПП <span style="color:#94a3b8;font-weight:400">(какие видит)</span></label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:8px">
+          {% for b in branches %}
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" name="kpp_branch_ids" value="{{ b.id }}"> {{ b.name }}</label>
+          {% endfor %}
+        </div>
       </div>
       <div class="field"><label>Телефон</label><input type="text" name="phone" value="+998 "></div>
       <div class="field"><label>Telegram chat ID <span style="color:#94a3b8;font-weight:400">(для уведомлений бота)</span></label>
@@ -146,7 +154,15 @@
       <div style="display:flex;gap:12px">
         <div class="field" style="flex:1"><label>Телефон</label><input type="text" name="phone" id="u_phone"></div>
         <div class="field" style="flex:1"><label>Роль</label>
-          <select name="role" id="u_role"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="viewer">Просмотр</option><option value="client">Заказчик</option></select></div>
+          <select name="role" id="u_role" onchange="toggleKpp(this,'kppBoxEdit')"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="viewer">Просмотр</option><option value="kpp">КПП</option><option value="client">Заказчик</option></select></div>
+      </div>
+      <div class="field" id="kppBoxEdit" style="display:none">
+        <label>Филиалы для КПП <span style="color:#94a3b8;font-weight:400">(какие видит)</span></label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:8px">
+          {% for b in branches %}
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" name="kpp_branch_ids" value="{{ b.id }}" class="u_kpp_branch"> {{ b.name }}</label>
+          {% endfor %}
+        </div>
       </div>
       <div class="field"><label>Telegram chat ID (для уведомлений бота)</label>
         <input type="text" name="telegram_chat_id" id="u_telegram_chat_id" placeholder="напр. 123456789"></div>
@@ -278,6 +294,9 @@
   function close_(n){document.getElementById('modal-'+n).classList.remove('open')}
   document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
 
+  function toggleKpp(sel, boxId){
+    document.getElementById(boxId).style.display = (sel.value==='kpp') ? 'block' : 'none';
+  }
   function editUser(d){
     document.getElementById('userEditForm').action='/admin/users/'+d.id+'/edit';
     document.getElementById('u_full_name').value=d.full_name||'';
@@ -287,6 +306,12 @@
     document.getElementById('u_department_id').value=d.department_id||'';
     document.getElementById('u_telegram_chat_id').value=d.telegram_chat_id||'';
     document.getElementById('u_password').value='';
+    // КПП filiallari
+    var ids=(d.kpp_branch_ids||[]).map(String);
+    document.querySelectorAll('.u_kpp_branch').forEach(function(cb){
+      cb.checked = ids.indexOf(cb.value)>=0;
+    });
+    document.getElementById('kppBoxEdit').style.display = (d.role==='kpp') ? 'block' : 'none';
     open_('userEdit');
   }
   function editCat(d){

@@ -95,6 +95,18 @@
   </div>
 </div>
 <script>
+  // Scrollni saqlash: izmenit/udalit/dobavit qilinganda sahifa tepaga sakramaydi
+  (function(){
+    if('scrollRestoration' in history){ history.scrollRestoration='manual'; }
+    var KEY='mwScroll:'+location.pathname;
+    window.addEventListener('DOMContentLoaded', function(){
+      var y=sessionStorage.getItem(KEY);
+      if(y!==null){ window.scrollTo(0, parseInt(y,10)); sessionStorage.removeItem(KEY); }
+      document.addEventListener('submit', function(e){
+        try{ sessionStorage.setItem('mwScroll:'+location.pathname, String(window.scrollY)); }catch(_){}
+      }, true);
+    });
+  })();
   function toggleMenu(){
     if(window.innerWidth>760){
       document.getElementById('layout').classList.toggle('collapsed');

@@ -22,6 +22,7 @@ class Role(str, enum.Enum):
     executor = "executor"
     client = "client"          # filial foydalanuvchisi
     viewer = "viewer"          # kuzatuvchi — hamma bo'limni ko'radi (faqat o'qish)
+    kpp = "kpp"                # КПП — admin belgilagan filiallarni ko'radi (faqat o'qish)
 
 
 class Status(str, enum.Enum):
@@ -90,10 +91,19 @@ class User(Base):
 
     department = relationship("Department", back_populates="users")
     branch = relationship("Branch")
+    visible_branches = relationship("Branch", secondary="kpp_branches")
     created_requests = relationship(
         "Request", back_populates="creator", foreign_keys="Request.created_by")
     assigned_requests = relationship(
         "Request", back_populates="assignee", foreign_keys="Request.assigned_to")
+
+
+# КПП foydalanuvchisi ko'ra oladigan filiallar (many-to-many)
+kpp_branches = Table(
+    "kpp_branches", Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("branch_id", Integer, ForeignKey("branches.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 # bir zayavkaga bir nechta ijrochi (many-to-many)
