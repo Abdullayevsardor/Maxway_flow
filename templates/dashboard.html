@@ -37,8 +37,8 @@
 </div>
 
 {% if unassigned > 0 %}
-<div class="alert-warn">⏱ {{ unassigned }} заявок ожидают назначения исполнителя
-  <a href="/requests" class="link">→ Назначить</a></div>
+<div class="alert-warn">⏱ {{ unassigned }} заявок ожидают назначения исполнителя{% if user.role.value in ['admin','manager'] %}
+  <a href="/requests" class="link">→ Назначить</a>{% endif %}</div>
 {% endif %}
 
 <div class="panel">

@@ -109,7 +109,7 @@
 <!-- ===== MODALLAR ===== -->
 <!-- Foydalanuvchi qo'shish -->
 <div class="modal-bg" id="modal-user">
-  <div class="modal">
+  <div class="modal" style="max-width:660px">
     <h3>Добавить пользователя</h3>
     <form method="post" action="/admin/users/create">
       <div class="field"><label>Полное имя</label><input type="text" name="full_name" required></div>
@@ -127,9 +127,9 @@
       </div>
       <div class="field" id="kppBox" style="display:none">
         <label>Филиалы для КПП <span style="color:#94a3b8;font-weight:400">(какие видит)</span></label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:8px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px 14px;max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:12px">
           {% for b in branches %}
-          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" name="kpp_branch_ids" value="{{ b.id }}"> {{ b.name }}</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px;padding:5px 0;cursor:pointer"><input type="checkbox" name="kpp_branch_ids" value="{{ b.id }}" style="width:16px;height:16px;flex:none"> <span>{{ b.name }}</span></label>
           {% endfor %}
         </div>
       </div>
@@ -146,7 +146,7 @@
 
 <!-- Foydalanuvchi tahrirlash -->
 <div class="modal-bg" id="modal-userEdit">
-  <div class="modal">
+  <div class="modal" style="max-width:660px">
     <h3>Изменить пользователя</h3>
     <form method="post" id="userEditForm">
       <div class="field"><label>Полное имя</label><input type="text" name="full_name" id="u_full_name" required></div>
@@ -158,9 +158,9 @@
       </div>
       <div class="field" id="kppBoxEdit" style="display:none">
         <label>Филиалы для КПП <span style="color:#94a3b8;font-weight:400">(какие видит)</span></label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:8px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px 14px;max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:12px">
           {% for b in branches %}
-          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" name="kpp_branch_ids" value="{{ b.id }}" class="u_kpp_branch"> {{ b.name }}</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px;padding:5px 0;cursor:pointer"><input type="checkbox" name="kpp_branch_ids" value="{{ b.id }}" class="u_kpp_branch" style="width:16px;height:16px;flex:none"> <span>{{ b.name }}</span></label>
           {% endfor %}
         </div>
       </div>
