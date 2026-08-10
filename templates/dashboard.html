@@ -9,7 +9,7 @@
   {% endif %}
   <!-- <div class="head-actions">
     <a href="/dashboard" class="btn btn-light">⟳ Обновить</a>
-    {% if user.role.value in ['admin','manager','client'] %}
+    {% if can(user,'create_request') %}
     <a href="/requests" class="btn btn-blue">＋ Создать заявку</a>
     {% endif %}
   </div> -->

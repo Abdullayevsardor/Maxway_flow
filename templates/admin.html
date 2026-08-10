@@ -26,7 +26,7 @@
         <td data-label="Категория">{% if u.department %}{{ u.department.name }}{% else %}—{% endif %}</td>
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
-            onclick='editUser({{ {"id":u.id,"full_name":u.full_name,"email":u.email,"role":u.role.value,"department_id":u.department_id or "","phone":u.phone or "","telegram_chat_id":u.telegram_chat_id or "","kpp_branch_ids":u.visible_branches|map(attribute="id")|list}|tojson }})'>✏ Изменить</button>
+            onclick='editUser({{ {"id":u.id,"full_name":u.full_name,"email":u.email,"role":u.role.value,"department_id":u.department_id or "","phone":u.phone or "","telegram_chat_id":u.telegram_chat_id or "","kpp_branch_ids":u.visible_branches|map(attribute="id")|list}|tojson }}, { {% for k,l,s in PERMISSION_DEFS %}{{ k|tojson }}: {{ can(u,k)|tojson }}{{ "," if not loop.last }}{% endfor %} })'>✏ Изменить</button>
           {% if u.id != user.id %}
           <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline"
                 onsubmit="return confirm({% set c = req_counts.get(u.id, 0) %}{% if c %}'⚠️ У «{{ u.full_name }}» есть {{ c }} заявок(и). При удалении пользователя ВСЕ его заявки будут удалены безвозвратно!\n\nВсё равно удалить?'{% else %}'Удалить «{{ u.full_name }}»?'{% endif %})">
@@ -172,6 +172,22 @@
         </select></div>
       <div class="field"><label>Новый пароль <span style="color:#94a3b8;font-weight:400">(оставьте пустым, чтобы не менять)</span></label>
         <input type="text" name="password" id="u_password" placeholder="••••••••" autocomplete="new-password"></div>
+
+      <div class="field" id="permsBox">
+        <label>🔑 Разрешения <span style="color:#94a3b8;font-weight:400">(что может этот пользователь)</span></label>
+        <div id="permsAdminNote" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:8px">Админу доступно всё — настройка не требуется.</div>
+        {% set _sections = PERMISSION_DEFS|groupby(2) %}
+        {% for section, perms in _sections %}
+        <div style="margin-bottom:8px">
+          <div style="font-weight:600;color:#475569;font-size:13px;margin-bottom:4px">{{ section }}</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 12px">
+            {% for k, label, sec in perms %}
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" name="perms" value="{{ k }}" class="u_perm" data-key="{{ k }}" style="width:15px;height:15px;flex:none"> {{ label }}</label>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-light" onclick="close_('userEdit')">Отмена</button>
         <button type="submit" class="btn btn-blue">Сохранить</button>
@@ -297,7 +313,7 @@
   function toggleKpp(sel, boxId){
     document.getElementById(boxId).style.display = (sel.value==='kpp') ? 'block' : 'none';
   }
-  function editUser(d){
+  function editUser(d, perms){
     document.getElementById('userEditForm').action='/admin/users/'+d.id+'/edit';
     document.getElementById('u_full_name').value=d.full_name||'';
     document.getElementById('u_email').value=d.email||'';
@@ -312,6 +328,13 @@
       cb.checked = ids.indexOf(cb.value)>=0;
     });
     document.getElementById('kppBoxEdit').style.display = (d.role==='kpp') ? 'block' : 'none';
+    // ruxsatlar
+    perms = perms || {};
+    document.querySelectorAll('.u_perm').forEach(function(cb){
+      cb.checked = !!perms[cb.dataset.key];
+    });
+    var isAdmin = (d.role==='admin');
+    document.getElementById('permsAdminNote').style.display = isAdmin ? 'block':'none';
     open_('userEdit');
   }
   function editCat(d){

@@ -31,7 +31,7 @@
       <a href="/stoplist/history" class="{{ 'active' if active=='stophistory' }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 3"/></svg>История</a>
       {% endif %}
-      {% if user.role.value == 'manager' and _supply %}
+      {% if can(user,'manage_menu') %}
       <a href="/stoplist/menu" class="{{ 'active' if active=='stopmenu' }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>Меню</a>
       {% endif %}
@@ -39,7 +39,7 @@
       <a href="/executors" class="{{ 'active' if active=='executors' }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>Исполнители</a>
       {% endif %}
-      {% if user.role.value in ['admin','viewer'] %}
+      {% if can(user,'view_analytics') %}
       <a href="/analytics" class="{{ 'active' if active=='analytics' }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>Аналитика</a>
       {% endif %}

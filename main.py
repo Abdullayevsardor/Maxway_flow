@@ -33,7 +33,8 @@ def _ensure_columns():
               ("branches", "director_name", "VARCHAR(120) DEFAULT ''"),
               ("notifications", "from_name", "VARCHAR(120)"),
               ("stop_entries", "resolved_at", "TIMESTAMP"),
-              ("stop_entries", "supply_comment", "TEXT DEFAULT ''")]
+              ("stop_entries", "supply_comment", "TEXT DEFAULT ''"),
+              ("users", "perms", "TEXT")]
     try:
         insp = sa_inspect(engine)
         tables = insp.get_table_names()
@@ -438,7 +439,7 @@ def create_request(request: Request, title: str = Form(...), description: str = 
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
-    if user.role in (Role.executor, Role.viewer, Role.kpp):
+    if not has_perm(user, "create_request"):
         return RedirectResponse("/requests", 302)
     if not title.strip():
         return RedirectResponse("/requests?err=title", 302)
@@ -590,6 +591,8 @@ def assign_request(req_id: int, request: Request, assigned_to: int = Form(...),
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
+    if not has_perm(user, "assign"):
+        return RedirectResponse(f"/requests/{req_id}", 302)
     r = db.get(models.Request, req_id)
     if r:
         # bo'limga biriktirilgan admin/menejer faqat o'z bo'limida ish qiladi
@@ -831,9 +834,9 @@ def profile_update(request: Request, full_name: str = Form(...), phone: str = Fo
     else:
         user.full_name = full_name.strip()
         user.phone = phone.strip()
-        # email (login) o'zgartirish — band bo'lmasa
+        # email (login) — faqat ADMIN o'zgartira oladi
         new_email = email.lower().strip()
-        if new_email and new_email != user.email:
+        if user.role == Role.admin and new_email and new_email != user.email:
             taken = db.query(models.User).filter(
                 models.User.email == new_email, models.User.id != user.id).first()
             if not taken:
@@ -968,7 +971,7 @@ def analytics_page(request: Request, db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
-    if user.role not in (Role.admin, Role.viewer):
+    if not has_perm(user, "view_analytics"):
         return RedirectResponse("/dashboard", 302)
     base = db.query(models.Request)
     total = base.count()
@@ -1129,7 +1132,7 @@ def admin_user_edit(uid: int, request: Request, full_name: str = Form(...),
                     department_id: Optional[int] = Form(None),
                     phone: str = Form(""), telegram_chat_id: str = Form(""),
                     password: str = Form(""), kpp_branch_ids: List[int] = Form([]),
-                    db: Session = Depends(get_db)):
+                    perms: List[str] = Form([]), db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
@@ -1156,6 +1159,8 @@ def admin_user_edit(uid: int, request: Request, full_name: str = Form(...),
         # parol — faqat kiritilgan bo'lsa o'zgartiramiz
         if password.strip():
             p.hashed_password = auth.hash_password(password.strip())
+        # ruxsatlar (admin belgilaydi) — barcha kalitlar aniq yoziladi
+        p.perms = json.dumps({k: (k in perms) for k in PERMISSION_KEYS})
         db.commit()
     return RedirectResponse("/admin", 302)
 
@@ -1330,14 +1335,68 @@ def is_supply(user):
     return user.department is not None and "набжен" in (user.department.name or "").lower()
 
 
+# ===================== RUXSATLAR (admin har bir userga belgilaydi) =====================
+# (kalit, ko'rinadigan nomi, bo'lim)
+PERMISSION_DEFS = [
+    ("create_request", "Создавать заявки", "Заявки"),
+    ("assign",         "Назначать исполнителей", "Заявки"),
+    ("add_stop",       "Добавлять в стоп-лист", "Стоп-лист"),
+    ("resolve_stop",   "Убирать из стоп-листа", "Стоп-лист"),
+    ("comment_stop",   "Комментировать стоп-лист (снабжение)", "Стоп-лист"),
+    ("manage_menu",    "Управлять меню стоп-листа", "Стоп-лист"),
+    ("view_analytics", "Видеть аналитику", "Аналитика"),
+]
+PERMISSION_KEYS = [k for k, _, _ in PERMISSION_DEFS]
+
+
+def _role_default(user, key):
+    """Ruxsat maxsus belgilanmagan bo'lsa — rol bo'yicha standart xatti-harakat."""
+    r = user.role
+    if key == "create_request":
+        return r in (Role.admin, Role.manager, Role.client)
+    if key == "assign":
+        return r in (Role.admin, Role.manager)
+    if key == "add_stop":
+        return r == Role.client
+    if key == "resolve_stop":
+        return r == Role.client or is_supply(user)
+    if key == "comment_stop":
+        return is_supply(user)
+    if key == "manage_menu":
+        return r == Role.manager and is_supply(user)
+    if key == "view_analytics":
+        return r in (Role.admin, Role.viewer)
+    return False
+
+
+def has_perm(user, key):
+    """Admin — hamma narsaga ruxsatli. Aks holda: maxsus ruxsat bo'lsa o'sha, bo'lmasa rol standarti."""
+    if user is None:
+        return False
+    if user.role == Role.admin:
+        return True
+    try:
+        perms = json.loads(user.perms) if user.perms else None
+    except Exception:
+        perms = None
+    if isinstance(perms, dict) and key in perms:
+        return bool(perms[key])
+    return _role_default(user, key)
+
+
+# shablonlarда `can(user, 'create_request')` sifatida ishlatiladi
+templates.env.globals["can"] = has_perm
+templates.env.globals["PERMISSION_DEFS"] = PERMISSION_DEFS
+
+
 def can_see_stoplist(user):
     # Снабжение bo'limi, filial direktorlari, viewer (ADMIN EMAS)
     return user.role in (Role.client, Role.viewer) or is_supply(user)
 
 
 def can_manage_menu(user):
-    """Menyu boshqaruvi — faqat Снабжение bo'limidagi menejer."""
-    return user.role == Role.manager and is_supply(user)
+    """Menyu boshqaruvi — ruxsatga qarab (default: Снабжение menejeri)."""
+    return has_perm(user, "manage_menu")
 
 
 @app.get("/stoplist", response_class=HTMLResponse)
@@ -1357,8 +1416,8 @@ def stoplist_page(request: Request, sync: str = "", db: Session = Depends(get_db
     return templates.TemplateResponse(request, "stoplist.html", {
         "request": request, "user": user, "active": "stoplist",
         "menu_items": menu_items, "entries": entries, "is_client": is_client,
-        "can_resolve": is_supply(user) or is_client,
-        "can_comment": is_supply(user), "sync_msg": sync,
+        "can_resolve": has_perm(user, "resolve_stop"),
+        "can_comment": has_perm(user, "comment_stop"), "sync_msg": sync,
     })
 
 
@@ -1399,7 +1458,7 @@ def stoplist_add(request: Request, menu_name: List[str] = Form([]),
                  reason: str = Form(...), comment: str = Form(""),
                  db: Session = Depends(get_db)):
     user = current_user(request, db)
-    if not user or user.role != Role.client or not user.user_branch_id:
+    if not user or not user.user_branch_id or not has_perm(user, "add_stop"):
         return RedirectResponse("/login", 302)
     if reason not in REASON_LABELS:
         return RedirectResponse("/stoplist", 302)
@@ -1428,7 +1487,7 @@ def stoplist_comment(sid: int, request: Request, comment: str = Form(""),
                      db: Session = Depends(get_db)):
     """Снабжение xodimi o'z izohini (supply_comment) qo'shadi/tahrirlaydi."""
     user = current_user(request, db)
-    if not user or not is_supply(user):
+    if not user or not has_perm(user, "comment_stop"):
         return RedirectResponse("/login", 302)
     e = db.get(models.StopEntry, sid)
     if e:
@@ -1444,9 +1503,9 @@ def stoplist_resolve(sid: int, request: Request, db: Session = Depends(get_db)):
         return RedirectResponse("/login", 302)
     e = db.get(models.StopEntry, sid)
     if e:
-        # klient faqat o'z filialini, aks holda snabjenie xodimi
+        # o'z filiali (client) yoki resolve ruxsati borlar
         ok = (user.role == Role.client and e.branch_id == user.user_branch_id) \
-            or is_supply(user)
+            or has_perm(user, "resolve_stop")
         if ok:
             e.resolved = True
             e.resolved_at = datetime.utcnow() + timedelta(hours=5)

@@ -92,6 +92,7 @@ class User(Base):
     department = relationship("Department", back_populates="users")
     branch = relationship("Branch")
     visible_branches = relationship("Branch", secondary="kpp_branches")
+    perms = Column(Text, nullable=True)   # admin belgilagan ruxsatlar (JSON), null = rol bo'yicha
     created_requests = relationship(
         "Request", back_populates="creator", foreign_keys="Request.created_by")
     assigned_requests = relationship(

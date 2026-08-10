@@ -8,7 +8,7 @@
     <p>Всего: {{ counts.all }}</p>
   </div>
   <div class="head-actions">
-    {% if user.role.value in ['admin','manager','client'] %}
+    {% if can(user,'create_request') %}
     <button class="btn btn-blue" onclick="openModal()">＋ Создать заявку</button>
     {% endif %}
   </div>
