@@ -1096,6 +1096,7 @@ def admin_user_create(request: Request, full_name: str = Form(...), email: str =
                       password: str = Form("12345678"), role: str = Form("executor"),
                       department_id: Optional[int] = Form(None), phone: str = Form(""),
                       telegram_chat_id: str = Form(""), kpp_branch_ids: List[int] = Form([]),
+                      perms: List[str] = Form([]),
                       db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
@@ -1112,6 +1113,9 @@ def admin_user_create(request: Request, full_name: str = Form(...), email: str =
         if role == "kpp" and kpp_branch_ids:
             nu.visible_branches = db.query(models.Branch).filter(
                 models.Branch.id.in_(kpp_branch_ids)).all()
+        # ruxsatlar belgilangan bo'lsa — aniq yozamiz; aks holda null (rol bo'yicha)
+        if perms:
+            nu.perms = json.dumps({k: (k in perms) for k in PERMISSION_KEYS})
         db.add(nu)
         db.commit()
     return RedirectResponse("/admin", 302)

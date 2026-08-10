@@ -151,6 +151,21 @@
       <div class="field"><label>Телефон</label><input type="text" name="phone" value="+998 "></div>
       <div class="field"><label>Telegram chat ID <span style="color:#94a3b8;font-weight:400">(для уведомлений бота)</span></label>
         <input type="text" name="telegram_chat_id" placeholder="напр. 123456789"></div>
+
+      <div class="field">
+        <label>🔑 Разрешения <span style="color:#94a3b8;font-weight:400">(что может; пусто — права по роли)</span></label>
+        {% set _sec = PERMISSION_DEFS|groupby(2) %}
+        {% for section, perms in _sec %}
+        <div style="margin-bottom:8px">
+          <div style="font-weight:600;color:#475569;font-size:13px;margin-bottom:4px">{{ section }}</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 12px">
+            {% for k, label, sec in perms %}
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" name="perms" value="{{ k }}" style="width:15px;height:15px;flex:none"> {{ label }}</label>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-light" onclick="close_('user')">Отмена</button>
         <button type="submit" class="btn btn-blue">Добавить</button>
