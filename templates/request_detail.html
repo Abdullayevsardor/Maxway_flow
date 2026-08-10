@@ -107,7 +107,7 @@
           {% endif %}
         </div>
         {% endif %}
-        {% if user.role.value in ['admin','manager'] or (user.role.value == 'executor' and r.status.value in ['approved','in_progress','on_check']) %}
+        {% if user.role.value in ['admin','manager'] or (user.role.value == 'executor' and r.status.value not in ['done','rejected']) %}
         <form method="post" action="/requests/{{ r.id }}/solution" enctype="multipart/form-data"
               style="margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
           <div style="font-weight:600;margin-bottom:10px">✅ Отправить решение (как исправлено)</div>
