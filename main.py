@@ -444,10 +444,12 @@ def create_request(request: Request, title: str = Form(...), description: str = 
         return RedirectResponse("/requests?err=title", 302)
     dl = None
     if deadline:
-        try:
-            dl = datetime.strptime(deadline, "%Y-%m-%d")
-        except ValueError:
-            dl = None
+        for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+            try:
+                dl = datetime.strptime(deadline, fmt)
+                break
+            except ValueError:
+                dl = None
     branch_name = ""
     branch_phone = ""
     branch_director = ""
@@ -813,6 +815,7 @@ def profile_page(request: Request, db: Session = Depends(get_db)):
 @app.post("/profile/update")
 def profile_update(request: Request, full_name: str = Form(...), phone: str = Form(""),
                    bio: str = Form(""), telegram_chat_id: str = Form(""),
+                   email: str = Form(""),
                    current_password: str = Form(""),
                    new_password: str = Form(""), confirm_password: str = Form(""),
                    photo: UploadFile = File(None), db: Session = Depends(get_db)):
@@ -828,6 +831,13 @@ def profile_update(request: Request, full_name: str = Form(...), phone: str = Fo
     else:
         user.full_name = full_name.strip()
         user.phone = phone.strip()
+        # email (login) o'zgartirish — band bo'lmasa
+        new_email = email.lower().strip()
+        if new_email and new_email != user.email:
+            taken = db.query(models.User).filter(
+                models.User.email == new_email, models.User.id != user.id).first()
+            if not taken:
+                user.email = new_email
     user.bio = bio.strip()
     user.telegram_chat_id = telegram_chat_id.strip() or None
     # rasm yuklash

@@ -22,7 +22,7 @@
         <button type="submit" class="btn" style="background:#dcfce7;color:#15803d;border:1px solid #86efac">✓ Одобрить</button>
       </form>
       {% endif %}
-      {% if r.status.value in ['approved','in_progress'] %}
+      {% if r.status.value in ['new','approved','in_progress'] %}
       <button class="btn btn-blue" onclick="openModal('assign')">＋ Назначить исполнителя</button>
       {% endif %}
       {% if r.status.value not in ['rejected','done'] %}
@@ -83,7 +83,7 @@
           <div><span>👤 Создал</span><b>{{ dname(r.creator) }}</b></div>
           <div><span>📅 Создана</span><b>{{ r.created_at.strftime('%d.%m.%Y %H:%M') }}</b></div>
           <div><span>👤 Исполнители</span><b>{{ r.assignees|map(attribute='full_name')|join(', ') if r.assignees else "—" }}</b></div>
-          <div><span>⏰ Дедлайн</span><b style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y') if r.deadline else "—" }}</b></div>
+          <div><span>⏰ Дедлайн</span><b style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y %H:%M') if r.deadline else "—" }}</b></div>
           <div><span>🏷 Категория</span><b>{{ r.department.name }}</b></div>
           {% if r.subcategory %}<div><span>📂 Подкатегория</span><b>{{ r.subcategory.name }}</b></div>{% endif %}
           <div><span>🔄 Обновлена</span><b>{{ r.updated_at.strftime('%d.%m.%Y %H:%M') }}</b></div>
@@ -107,7 +107,7 @@
           {% endif %}
         </div>
         {% endif %}
-        {% if user.role.value in ['admin','manager'] or (user.role.value == 'executor' and r.status.value in ['in_progress','on_check']) %}
+        {% if user.role.value in ['admin','manager'] or (user.role.value == 'executor' and r.status.value in ['approved','in_progress','on_check']) %}
         <form method="post" action="/requests/{{ r.id }}/solution" enctype="multipart/form-data"
               style="margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
           <div style="font-weight:600;margin-bottom:10px">✅ Отправить решение (как исправлено)</div>

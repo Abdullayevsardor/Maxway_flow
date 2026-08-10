@@ -45,8 +45,13 @@
           <input type="text" name="phone" placeholder="+998 90 123 45 67"
                  value="{% if user.role.value == 'client' and user.branch %}{{ user.branch.phone or '+998 ' }}{% else %}{{ user.phone or '+998 ' }}{% endif %}"></div>
       </div>
+      {% if user.role.value == 'client' %}
       <div class="field"><label>Email (изменить нельзя)</label>
         <input type="email" value="{{ user.email }}" disabled style="background:#f1f5f9;color:#94a3b8"></div>
+      {% else %}
+      <div class="field"><label>Email (логин)</label>
+        <input type="email" name="email" value="{{ user.email }}" required></div>
+      {% endif %}
       <div class="field"><label>📩 Telegram chat ID <span style="color:#94a3b8;font-weight:400">(для уведомлений в бот)</span></label>
         <input type="text" name="telegram_chat_id" value="{{ user.telegram_chat_id or '' }}" placeholder="Напишите боту @userinfobot — он пришлёт ваш ID">
         <div style="color:#94a3b8;font-size:12px;margin-top:4px">Как получить: откройте <b>@userinfobot</b> в Telegram → нажмите Start → скопируйте число (Id). Затем нажмите Start у бота MAXWAY.</div>

@@ -52,7 +52,7 @@
         <td data-label="Категория">{{ r.department.name }}</td>
         <td data-label="Заказчик">{{ r.customer_name or "—" }}</td>
         <td data-label="Исполнитель">{{ r.assignees|map(attribute='full_name')|join(', ') if r.assignees else "—" }}</td>
-        <td data-label="Дедлайн" style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y') if r.deadline else "—" }}</td>
+        <td data-label="Дедлайн" style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y %H:%M') if r.deadline else "—" }}</td>
       </tr>
       {% else %}
       <tr><td colspan="8" class="empty">Заявка не найдена</td></tr>
@@ -85,7 +85,7 @@
         </select></div>
       {% endif %}
       <!-- <div class="field"><label>Дедлайн</label><input type="date" name="deadline"></div> -->
-      <div class="field"><label>Дедлайн</label><input type="date" name="deadline" style="cursor:pointer" onclick="this.showPicker && this.showPicker()"></div>
+      <div class="field"><label>Дедлайн <span style="color:#94a3b8;font-weight:400">(дата и время)</span></label><input type="datetime-local" name="deadline" style="cursor:pointer" onclick="this.showPicker && this.showPicker()"></div>
 
       <div class="upload-box">
         <div class="upload-ico">📷</div>
