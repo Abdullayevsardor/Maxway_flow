@@ -344,6 +344,17 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     # har bo'lim bo'yicha foydalanuvchining o'z zayavkalari soni
     dep_counts = dict(q.with_entities(models.Request.department_id, _func.count(models.Request.id))
                       .group_by(models.Request.department_id).all())
+    # КПП uchun: zayavkalar filial va kategoriya bo'yicha guruhlangan
+    kpp_groups = None
+    if user.role == Role.kpp:
+        tmp = {}
+        for r in q.order_by(models.Request.created_at.desc()).all():
+            bn = r.branch.name if r.branch else "—"
+            cn = r.department.name if r.department else "—"
+            tmp.setdefault(bn, {}).setdefault(cn, []).append(r)
+        kpp_groups = [{"branch": bn,
+                       "cats": [{"cat": cn, "items": tmp[bn][cn]} for cn in sorted(tmp[bn])]}
+                      for bn in sorted(tmp)]
     ctx = {
         "request": request, "user": user, "active": "dashboard",
         "total": q.count(),
@@ -354,6 +365,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                                ~models.Request.status.in_([Status.done, Status.rejected])).count(),
         "departments": scoped_departments(db, user),
         "dep_counts": dep_counts,
+        "kpp_groups": kpp_groups,
         "recent": q.order_by(models.Request.created_at.desc()).limit(10).all(),
     }
     return templates.TemplateResponse(request, "dashboard.html", ctx)
@@ -753,6 +765,10 @@ def add_solution(req_id: int, request: Request, comment: str = Form(""),
         return RedirectResponse("/requests", 302)
     img_ext = (".jpg", ".jpeg", ".png", ".webp", ".gif")
     vid_ext = (".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v", ".3gp")
+    # kamida bittasi bo'lishi shart: rasm YOKI video YOKI izoh
+    has_file = any(up and up.filename for up in (list(photos) + list(videos)))
+    if not has_file and not comment.strip():
+        return RedirectResponse(f"/requests/{req_id}?err=solution", 302)
     os.makedirs("static/uploads/requests", exist_ok=True)
     idx = db.query(models.Attachment).filter(models.Attachment.request_id == r.id).count()
     for up in list(photos) + list(videos):
@@ -1079,6 +1095,8 @@ def admin_user_create(request: Request, full_name: str = Form(...), email: str =
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
     email = email.lower().strip()
+    if role == "kpp":
+        department_id = None
     if not db.query(models.User).filter(models.User.email == email).first():
         nu = models.User(full_name=full_name.strip(), email=email,
                          hashed_password=auth.hash_password(password or "12345678"),
@@ -1147,7 +1165,7 @@ def admin_user_edit(uid: int, request: Request, full_name: str = Form(...),
             if not taken:
                 p.email = new_email
         p.role = Role(role)
-        p.department_id = department_id
+        p.department_id = None if role == "kpp" else department_id
         p.phone = phone.strip()
         p.telegram_chat_id = telegram_chat_id.strip()
         # КПП filiallari

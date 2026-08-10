@@ -119,13 +119,13 @@
       </div>
       <div style="display:flex;gap:12px">
         <div class="field" style="flex:1"><label>Роль</label>
-          <select name="role" onchange="toggleKpp(this,'kppBox')"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="viewer">Просмотр</option><option value="kpp">КПП</option><option value="client">Заказчик</option></select></div>
-        <div class="field" style="flex:1"><label>Категория</label>
+          <select name="role" onchange="toggleKpp(this)"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="viewer">Просмотр</option><option value="kpp">КПП</option><option value="client">Заказчик</option></select></div>
+        <div class="field deptfield" style="flex:1"><label>Категория</label>
           <select name="department_id"><option value="">— нет —</option>
             {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
           </select></div>
       </div>
-      <div class="field" id="kppBox" style="display:none">
+      <div class="field kppbox" id="kppBox" style="display:none">
         <label>Филиалы для КПП <span style="color:#94a3b8;font-weight:400">(какие видит)</span></label>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px 14px;max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:12px">
           {% for b in branches %}
@@ -154,9 +154,9 @@
       <div style="display:flex;gap:12px">
         <div class="field" style="flex:1"><label>Телефон</label><input type="text" name="phone" id="u_phone"></div>
         <div class="field" style="flex:1"><label>Роль</label>
-          <select name="role" id="u_role" onchange="toggleKpp(this,'kppBoxEdit')"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="viewer">Просмотр</option><option value="kpp">КПП</option><option value="client">Заказчик</option></select></div>
+          <select name="role" id="u_role" onchange="toggleKpp(this)"><option value="executor">Исполнитель</option><option value="manager">Менеджер</option><option value="admin">Админ</option><option value="viewer">Просмотр</option><option value="kpp">КПП</option><option value="client">Заказчик</option></select></div>
       </div>
-      <div class="field" id="kppBoxEdit" style="display:none">
+      <div class="field kppbox" id="kppBoxEdit" style="display:none">
         <label>Филиалы для КПП <span style="color:#94a3b8;font-weight:400">(какие видит)</span></label>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px 14px;max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:12px">
           {% for b in branches %}
@@ -166,7 +166,7 @@
       </div>
       <div class="field"><label>Telegram chat ID (для уведомлений бота)</label>
         <input type="text" name="telegram_chat_id" id="u_telegram_chat_id" placeholder="напр. 123456789"></div>
-      <div class="field"><label>Категория</label>
+      <div class="field deptfield"><label>Категория</label>
         <select name="department_id" id="u_department_id"><option value="">— нет —</option>
           {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
         </select></div>
@@ -310,8 +310,13 @@
   function close_(n){document.getElementById('modal-'+n).classList.remove('open')}
   document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
 
-  function toggleKpp(sel, boxId){
-    document.getElementById(boxId).style.display = (sel.value==='kpp') ? 'block' : 'none';
+  function toggleKpp(sel){
+    var modal = sel.closest('.modal');
+    var isKpp = sel.value==='kpp';
+    var kb = modal.querySelector('.kppbox');
+    var df = modal.querySelector('.deptfield');
+    if(kb) kb.style.display = isKpp ? 'block':'none';
+    if(df) df.style.display = isKpp ? 'none':'';
   }
   function editUser(d, perms){
     document.getElementById('userEditForm').action='/admin/users/'+d.id+'/edit';
@@ -327,7 +332,7 @@
     document.querySelectorAll('.u_kpp_branch').forEach(function(cb){
       cb.checked = ids.indexOf(cb.value)>=0;
     });
-    document.getElementById('kppBoxEdit').style.display = (d.role==='kpp') ? 'block' : 'none';
+    toggleKpp(document.getElementById('u_role'));
     // ruxsatlar
     perms = perms || {};
     document.querySelectorAll('.u_perm').forEach(function(cb){

@@ -109,9 +109,10 @@
         {% endif %}
         {% if user.role.value in ['admin','manager'] or (user.role.value == 'executor' and r.status.value not in ['done','rejected']) %}
         <form method="post" action="/requests/{{ r.id }}/solution" enctype="multipart/form-data"
+              onsubmit="return solValidate(this)"
               style="margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
           <div style="font-weight:600;margin-bottom:10px">✅ Отправить решение (как исправлено)</div>
-          <textarea name="comment" class="inp" style="width:100%;min-height:60px;padding:10px"
+          <textarea name="comment" id="solText" class="inp" style="width:100%;min-height:60px;padding:10px"
             placeholder="Опишите, как решена проблема..."></textarea>
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
             <label class="btn btn-light" style="margin:0;cursor:pointer">📷 Фото
@@ -122,10 +123,23 @@
                      style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" onchange="solCnt(this,'solV')"></label>
             <span id="solP" class="upload-cnt"></span><span id="solV" class="upload-cnt"></span>
           </div>
+          <div style="color:#94a3b8;font-size:12px;margin-top:8px">Обязательно: фото, видео или комментарий.</div>
           <div style="text-align:right;margin-top:12px">
             <button type="submit" class="btn btn-blue">✅ Отправить решение</button>
           </div>
         </form>
+        <script>
+          function solValidate(f){
+            var txt=(document.getElementById('solText').value||'').trim();
+            var p=document.getElementById('solPInp').files.length;
+            var v=document.getElementById('solVInp').files.length;
+            if(!txt && !p && !v){
+              alert('Прикрепите фото, видео или напишите комментарий.');
+              return false;
+            }
+            return true;
+          }
+        </script>
         {% endif %}
         {% if user.role.value in ['admin','manager'] %}
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;border-top:1px solid var(--border);padding-top:14px">
