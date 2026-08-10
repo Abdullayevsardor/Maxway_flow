@@ -34,7 +34,8 @@ def _ensure_columns():
               ("notifications", "from_name", "VARCHAR(120)"),
               ("stop_entries", "resolved_at", "TIMESTAMP"),
               ("stop_entries", "supply_comment", "TEXT DEFAULT ''"),
-              ("users", "perms", "TEXT")]
+              ("users", "perms", "TEXT"),
+              ("requests", "dep_number", "INTEGER")]
     try:
         insp = sa_inspect(engine)
         tables = insp.get_table_names()
@@ -482,11 +483,16 @@ def create_request(request: Request, title: str = Form(...), description: str = 
         cust_name = customer_name.strip() or user.full_name
         cust_phone = customer_phone.strip() or (user.phone or "")
     cust_email = customer_email.strip() or user.email
+    # bo'lim ichidagi tartib raqami (1 dan boshlanadi, har bo'lim alohida)
+    from sqlalchemy import func as _f
+    last_no = db.query(_f.max(models.Request.dep_number)).filter(
+        models.Request.department_id == department_id).scalar() or 0
     r = models.Request(title=title.strip(), description=description.strip(),
                        department_id=department_id,
                        subcategory_id=subcategory_id or None,
                        priority=Priority(priority),
                        status=Status.new, created_by=user.id,
+                       dep_number=last_no + 1,
                        customer_name=cust_name, customer_email=cust_email,
                        customer_phone=cust_phone, branch=branch_name,
                        branch_id=branch_id, deadline=dl)
@@ -1183,7 +1189,33 @@ def admin_user_edit(uid: int, request: Request, full_name: str = Form(...),
     return RedirectResponse("/admin", 302)
 
 
-@app.post("/admin/categories/create")
+@app.post("/admin/requests/clear")
+def admin_clear_requests(request: Request, db: Session = Depends(get_db)):
+    """Barcha zayavkalar, kommentlar, fayllar va tegishli bildirishnomalarni o'chiradi."""
+    user = current_user(request, db)
+    if not user or user.role != Role.admin:
+        return RedirectResponse("/login", 302)
+    # biriktirilgan fayllarni diskdan o'chiramiz
+    for a in db.query(models.Attachment).all():
+        fp = (a.file_path or "").lstrip("/")
+        try:
+            if fp and os.path.exists(fp):
+                os.remove(fp)
+        except Exception:
+            pass
+    db.query(models.Attachment).delete(synchronize_session=False)
+    db.query(models.Comment).delete(synchronize_session=False)
+    db.query(models.StatusHistory).delete(synchronize_session=False)
+    db.query(models.Notification).filter(
+        models.Notification.link.like("/requests/%")).delete(synchronize_session=False)
+    try:
+        db.execute(models.request_assignees.delete())
+    except Exception:
+        pass
+    db.query(models.Request).delete(synchronize_session=False)
+    db.commit()
+    print(">>> [MAXWAY] Barcha zayavkalar tozalandi", flush=True)
+    return RedirectResponse("/admin?cleared=1", 302)
 def admin_cat_create(request: Request, name: str = Form(...), icon: str = Form("🗂️"),
                      color: str = Form("#2563eb"), subcategories: str = Form(""),
                      db: Session = Depends(get_db)):

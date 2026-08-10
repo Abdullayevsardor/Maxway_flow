@@ -106,6 +106,21 @@
   </table>
 </div>
 
+{% if request.query_params.get('cleared') %}
+<div style="background:#dcfce7;border:1px solid #86efac;color:#166534;padding:12px 16px;border-radius:12px;margin-bottom:16px">✅ Все заявки, комментарии и файлы очищены. Нумерация заявок начнётся с 1 для каждой категории.</div>
+{% endif %}
+
+<div class="panel" style="border-color:#fecaca">
+  <div class="panel-head"><div class="title" style="color:#dc2626">⚠️ Опасная зона</div></div>
+  <div class="panel-body">
+    <p style="color:#64748b;margin:0 0 12px;font-size:14px">Удалить <b>все заявки</b>, комментарии, фото/видео и связанные уведомления. Пользователи, категории и филиалы останутся. После очистки нумерация заявок в каждой категории начнётся с 1.</p>
+    <form method="post" action="/admin/requests/clear" style="margin:0"
+          onsubmit="return confirm('Точно удалить ВСЕ заявки и комментарии? Это НЕОБРАТИМО.') && confirm('Вы уверены? Все заявки будут удалены навсегда.')">
+      <button type="submit" class="btn" style="background:#dc2626;color:#fff">🗑 Очистить все заявки и комментарии</button>
+    </form>
+  </div>
+</div>
+
 <!-- ===== MODALLAR ===== -->
 <!-- Foydalanuvchi qo'shish -->
 <div class="modal-bg" id="modal-user">

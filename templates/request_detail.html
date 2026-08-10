@@ -37,7 +37,7 @@
   <div>
     <div class="panel">
       <div class="panel-body">
-        <h2 style="font-size:22px;font-weight:800;margin-bottom:12px">{{ r.title }}</h2>
+        <h2 style="font-size:22px;font-weight:800;margin-bottom:12px">{% if r.dep_number %}<span style="color:#94a3b8">№{{ r.dep_number }}</span> {% endif %}{{ r.title }}</h2>
         <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
           <span class="tag {{ r.status.value }}">{{ STATUS_LABELS[r.status.value] }}</span>
           <span class="tag {{ r.priority.value }}">{{ PRIORITY_LABELS[r.priority.value] }}</span>

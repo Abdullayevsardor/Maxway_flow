@@ -136,6 +136,7 @@ class Request(Base):
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
 
     deadline = Column(DateTime, nullable=True)       # дедлайн
+    dep_number = Column(Integer, nullable=True)      # bo'lim ichidagi tartib raqami (1 dan)
     reject_reason = Column(Text, default="")         # rad etish sababi
 
     created_at = Column(DateTime, default=tashkent_now)

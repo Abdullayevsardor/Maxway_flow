@@ -42,7 +42,7 @@
     <tbody>
       {% for r in items %}
       <tr onclick="location.href='/requests/{{ r.id }}'" style="cursor:pointer">
-        <td data-label="#">{{ r.id }}</td>
+        <td data-label="#">{{ r.dep_number or r.id }}</td>
         <td data-label="Название">
           <strong style="color:var(--blue)">{{ r.title }}</strong>
           {% if r.is_overdue %}<div><span class="tag overdue" style="font-size:11px">⏱ Просрочена</span></div>{% endif %}

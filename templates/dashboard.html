@@ -81,7 +81,7 @@
     <tbody>
       {% for r in recent %}
       <tr onclick="location.href='/requests/{{ r.id }}'" style="cursor:pointer">
-        <td data-label="#">{{ r.id }}</td>
+        <td data-label="#">{{ r.dep_number or r.id }}</td>
         <td data-label="Название"><strong style="color:var(--blue)">{{ r.title }}</strong></td>
         <td data-label="Статус"><span class="tag {{ r.status.value }}">{{ STATUS_LABELS[r.status.value] }}</span></td>
         <td data-label="Приоритет"><span class="tag {{ r.priority.value }}">{{ PRIORITY_LABELS[r.priority.value] }}</span></td>
