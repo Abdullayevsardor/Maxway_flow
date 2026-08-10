@@ -1208,6 +1208,9 @@ def admin_clear_requests(request: Request, db: Session = Depends(get_db)):
     db.query(models.StatusHistory).delete(synchronize_session=False)
     db.query(models.Notification).filter(
         models.Notification.link.like("/requests/%")).delete(synchronize_session=False)
+    # stop-list tarixini (yechilgan yozuvlar) ham tozalaymiz
+    db.query(models.StopEntry).filter(
+        models.StopEntry.resolved == True).delete(synchronize_session=False)
     try:
         db.execute(models.request_assignees.delete())
     except Exception:
@@ -1486,6 +1489,7 @@ def stoplist_history_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "stoplist_history.html", {
         "request": request, "user": user, "active": "stophistory",
         "history": history, "is_client": is_client,
+        "can_comment": has_perm(user, "comment_stop"),
     })
 
 
@@ -1543,7 +1547,9 @@ def stoplist_comment(sid: int, request: Request, comment: str = Form(""),
     if e:
         e.supply_comment = comment.strip()
         db.commit()
-    return RedirectResponse("/stoplist", 302)
+    ref = request.headers.get("referer") or "/stoplist"
+    dest = "/stoplist/history" if "history" in ref else "/stoplist"
+    return RedirectResponse(dest, 302)
 
 
 @app.post("/stoplist/{sid}/resolve")
