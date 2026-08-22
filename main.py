@@ -376,6 +376,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 @app.get("/requests", response_class=HTMLResponse)
 def requests_page(request: Request, department_id: Optional[int] = None,
                   status: Optional[str] = None, q: Optional[str] = None,
+                  subcategory_id: Optional[int] = None, date_from: str = "", date_to: str = "",
+                  customer: str = "", assignee: Optional[int] = None,
+                  unassigned: Optional[int] = None,
                   db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
@@ -383,6 +386,11 @@ def requests_page(request: Request, department_id: Optional[int] = None,
     query = base_requests(db, user)
     if department_id:
         query = query.filter(models.Request.department_id == department_id)
+    if subcategory_id:
+        query = query.filter(models.Request.subcategory_id == subcategory_id)
+    if unassigned:
+        query = query.filter(~models.Request.assignees.any(),
+                             models.Request.status.notin_([Status.done, Status.rejected]))
     if status == "overdue":
         query = query.filter(models.Request.deadline.isnot(None),
                              models.Request.deadline < datetime.utcnow(),
@@ -391,6 +399,21 @@ def requests_page(request: Request, department_id: Optional[int] = None,
         query = query.filter(models.Request.status == status)
     if q:
         query = query.filter(models.Request.title.ilike(f"%{q}%"))
+    if customer.strip():
+        query = query.filter(models.Request.customer_name.ilike(f"%{customer.strip()}%"))
+    if assignee:
+        query = query.filter(models.Request.assignees.any(models.User.id == assignee))
+    for fmt in ("%Y-%m-%d",):
+        if date_from.strip():
+            try:
+                query = query.filter(models.Request.created_at >= datetime.strptime(date_from.strip(), fmt))
+            except ValueError:
+                pass
+        if date_to.strip():
+            try:
+                query = query.filter(models.Request.created_at < datetime.strptime(date_to.strip(), fmt) + timedelta(days=1))
+            except ValueError:
+                pass
     items = query.order_by(models.Request.created_at.desc()).all()
 
     base = base_requests(db, user)
@@ -417,7 +440,9 @@ def requests_page(request: Request, department_id: Optional[int] = None,
         "executors": scoped_executors(db, user), "selected_dep": selected_dep,
         "selected_status": status, "counts": counts, "search": q or "",
         "branches": db.query(models.Branch).order_by(models.Branch.name).all(),
-        "subcats_map": subcats_map,
+        "subcats_map": subcats_map, "all_subcats": subcats,
+        "f_subcategory": subcategory_id, "f_date_from": date_from, "f_date_to": date_to,
+        "f_customer": customer, "f_assignee": assignee, "f_unassigned": unassigned,
     })
 
 
@@ -1447,8 +1472,8 @@ templates.env.globals["PERMISSION_DEFS"] = PERMISSION_DEFS
 
 
 def can_see_stoplist(user):
-    # Снабжение bo'limi, filial direktorlari, viewer (ADMIN EMAS)
-    return user.role in (Role.client, Role.viewer) or is_supply(user)
+    # Снабжение, filial direktorlari, viewer, admin
+    return user.role in (Role.client, Role.viewer, Role.admin) or is_supply(user)
 
 
 def can_manage_menu(user):

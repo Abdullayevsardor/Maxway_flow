@@ -7,13 +7,15 @@
   {% else %}
   <div><h1>{{ user.full_name }}</h1></div>
   {% endif %}
-  <!-- <div class="head-actions">
-    <a href="/dashboard" class="btn btn-light">⟳ Обновить</a>
-    {% if can(user,'create_request') %}
-    <a href="/requests" class="btn btn-blue">＋ Создать заявку</a>
+  {% if unassigned > 0 %}
+  <div class="head-actions">
+    {% if user.role.value in ['admin','manager'] %}
+    <a href="/requests?unassigned=1" class="alert-warn" style="text-decoration:none;display:inline-flex;align-items:center;gap:8px;margin:0">⏱ {{ unassigned }} ожидают назначения <b>→ Назначить</b></a>
+    {% else %}
+    <span class="alert-warn" style="display:inline-flex;align-items:center;margin:0">⏱ {{ unassigned }} ожидают назначения</span>
     {% endif %}
-  </div> -->
-
+  </div>
+  {% endif %}
 </div>
 
 <div class="stats">
@@ -67,10 +69,7 @@
 </div>
 {% endif %}
 
-{% if unassigned > 0 %}
-<div class="alert-warn">⏱ {{ unassigned }} заявок ожидают назначения исполнителя{% if user.role.value in ['admin','manager'] %}
-  <a href="/requests" class="link">→ Назначить</a>{% endif %}</div>
-{% endif %}
+{% if unassigned > 0 %}{% endif %}
 
 {% if kpp_groups is none %}
 <div class="panel">

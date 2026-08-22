@@ -25,17 +25,36 @@
   <a href="/requests?status=overdue" class="chip {{ 'active' if selected_status=='overdue' }}" style="border-color:#fecaca;color:#dc2626">⏱ Просроченные <span class="cbadge" style="background:#fef2f2;color:#dc2626">{{ counts.overdue }}</span></a>
 </div>
 
-<!-- Qidiruv -->
+<!-- Фильтры -->
 <div class="panel" style="padding:14px 18px;margin-bottom:18px">
-  <form method="get" action="/requests" style="display:flex;gap:10px;flex-wrap:wrap">
+  <form method="get" action="/requests" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     {% if selected_dep %}<input type="hidden" name="department_id" value="{{ selected_dep.id }}">{% endif %}
-    <input type="text" name="q" value="{{ search }}" placeholder="🔍 Поиск по названию..." class="inp" style="flex:1;min-width:200px;padding:10px 14px">
-    <button type="submit" class="btn btn-light">Найти</button>
+    {% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}
+    <input type="text" name="q" value="{{ search }}" placeholder="🔍 Название..." class="inp" style="flex:1;min-width:150px;padding:9px 12px">
+    <select name="subcategory_id" class="inp" style="min-width:150px;padding:9px 12px">
+      <option value="">Подкатегория</option>
+      {% for sc in all_subcats %}<option value="{{ sc.id }}" {{ 'selected' if f_subcategory==sc.id }}>{{ sc.name }}</option>{% endfor %}
+    </select>
+    <select name="assignee" class="inp" style="min-width:150px;padding:9px 12px">
+      <option value="">Исполнитель</option>
+      {% for e in executors %}<option value="{{ e.id }}" {{ 'selected' if f_assignee==e.id }}>{{ e.full_name }}</option>{% endfor %}
+    </select>
+    <input type="text" name="customer" value="{{ f_customer }}" placeholder="Заказчик" class="inp" style="min-width:130px;padding:9px 12px">
+    <input type="date" name="date_from" value="{{ f_date_from }}" class="inp" title="Дата с" style="padding:9px 12px">
+    <input type="date" name="date_to" value="{{ f_date_to }}" class="inp" title="Дата по" style="padding:9px 12px">
+    <button type="submit" class="btn btn-blue">Фильтр</button>
+    <a href="/requests" class="btn btn-light">Сброс</a>
   </form>
 </div>
 
+<style>
+  table.compact th, table.compact td{padding:7px 10px;font-size:13px}
+  table.compact .tag{font-size:11px;padding:2px 7px}
+  table.compact strong{font-size:13px}
+</style>
+
 <div class="panel">
-  <table>
+  <table class="compact">
     <thead>
       <tr><th>#</th><th>Название</th><th>Статус</th><th>Приоритет</th><th>Категория</th><th>Заказчик</th><th>Исполнитель</th><th>Дедлайн</th></tr>
     </thead>
