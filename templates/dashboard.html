@@ -71,36 +71,36 @@
 
 {# ==== Фильтр ==== #}
 <div class="panel" style="padding:12px 16px;margin-bottom:16px">
-  <form method="get" action="/dashboard" style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;font-size:13px">
+  <form method="get" action="/dashboard" style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap;overflow-x:auto;font-size:13px;padding-bottom:4px">
     {% if departments|length > 1 %}
-    <select name="department_id" id="fDep" class="inp" style="min-width:120px;padding:8px 10px" onchange="fillSubs()">
+    <select name="department_id" id="fDep" class="inp" style="min-width:115px;flex:none;padding:8px 8px" onchange="fillSubs()">
       <option value="">Категория</option>
       {% for d in departments %}<option value="{{ d.id }}" {{ 'selected' if f_dep==d.id }}>{{ d.name }}</option>{% endfor %}
     </select>
-    <select name="subcategory_id" id="fSub" class="inp" style="min-width:130px;padding:8px 10px">
+    <select name="subcategory_id" id="fSub" class="inp" style="min-width:125px;flex:none;padding:8px 8px">
       <option value="">Подкатегория</option>
     </select>
     {% else %}
     {% if departments %}<input type="hidden" name="department_id" value="{{ departments[0].id }}">{% endif %}
-    <select name="subcategory_id" class="inp" style="min-width:130px;padding:8px 10px">
+    <select name="subcategory_id" class="inp" style="min-width:125px;flex:none;padding:8px 8px">
       <option value="">Подкатегория</option>
       {% if departments %}{% for s in departments[0].subcategories %}<option value="{{ s.id }}" {{ 'selected' if f_sub==s.id }}>{{ s.name }}</option>{% endfor %}{% endif %}
     </select>
     {% endif %}
-    <select name="assignee" class="inp" style="min-width:130px;padding:8px 10px">
+    <select name="assignee" class="inp" style="min-width:120px;flex:none;padding:8px 8px">
       <option value="">Исполнитель</option>
       {% for e in executors %}<option value="{{ e.id }}" {{ 'selected' if f_asg==e.id }}>{{ e.full_name }}</option>{% endfor %}
     </select>
-    <input type="text" name="customer" value="{{ f_customer }}" list="custList" placeholder="Заказчик" class="inp" style="min-width:120px;padding:8px 10px" autocomplete="off">
+    <input type="text" name="customer" value="{{ f_customer }}" list="custList" placeholder="Заказчик" class="inp" style="min-width:110px;flex:none;padding:8px 8px" autocomplete="off">
     <datalist id="custList">{% for c in customers %}<option value="{{ c }}">{% endfor %}</datalist>
-    <span style="color:#64748b">С</span>
-    <input type="date" name="date_from" value="{{ f_date_from }}" class="inp" style="padding:8px 8px">
-    <span style="color:#64748b">По</span>
-    <input type="date" name="date_to" value="{{ f_date_to }}" class="inp" style="padding:8px 8px">
+    <span style="color:#64748b;flex:none">С</span>
+    <input type="date" name="date_from" value="{{ f_date_from }}" class="inp" style="padding:8px 6px;flex:none;width:140px">
+    <span style="color:#64748b;flex:none">По</span>
+    <input type="date" name="date_to" value="{{ f_date_to }}" class="inp" style="padding:8px 6px;flex:none;width:140px">
     {% if f_unassigned %}<input type="hidden" name="unassigned" value="1">{% endif %}
-    <a href="/dashboard?date_from={{ month_start }}&date_to={{ today_str }}" class="btn btn-light" style="padding:8px 12px">📅 Текущий месяц</a>
-    <button type="submit" class="btn btn-blue" style="padding:8px 16px">Фильтр</button>
-    <a href="/dashboard" class="btn btn-light" style="padding:8px 12px">Сброс</a>
+    <a href="/dashboard?date_from={{ month_start }}&date_to={{ today_str }}" class="btn btn-light" style="padding:8px 10px;flex:none;white-space:nowrap" title="Текущий месяц">📅</a>
+    <button type="submit" class="btn btn-blue" style="padding:8px 14px;flex:none;white-space:nowrap">Фильтр</button>
+    <a href="/dashboard" class="btn btn-light" style="padding:8px 10px;flex:none;white-space:nowrap">Сброс</a>
   </form>
 </div>
 {% if departments|length > 1 %}
