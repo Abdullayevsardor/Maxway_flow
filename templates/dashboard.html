@@ -82,19 +82,19 @@
     </select>
     {% else %}
     {% if departments %}<input type="hidden" name="department_id" value="{{ departments[0].id }}">{% endif %}
-    <select name="subcategory_id" class="inp" style="flex:none;padding:8px 10px" onchange="this.form.submit()">
+    <select name="subcategory_id" class="inp" style="width:140px;flex:none;padding:8px 10px" onchange="this.form.submit()">
       <option value="">Подкатегория</option>
       {% if departments %}{% for s in departments[0].subcategories %}<option value="{{ s.id }}" {{ 'selected' if f_sub==s.id }}>{{ s.name }}</option>{% endfor %}{% endif %}
     </select>
     {% endif %}
-    <select name="assignee" class="inp" style="flex:none;padding:8px 10px" onchange="this.form.submit()">
+    <select name="assignee" class="inp" style="width:125px;flex:none;padding:8px 10px" onchange="this.form.submit()">
       <option value="">Исполнитель</option>
       {% for e in executors %}<option value="{{ e.id }}" {{ 'selected' if f_asg==e.id }}>{{ e.full_name }}</option>{% endfor %}
     </select>
-    <input type="text" name="customer" value="{{ f_customer }}" list="custList" placeholder="Заказчик" class="inp" style="width:120px;flex:none;padding:8px 10px" autocomplete="off" onchange="this.form.submit()">
+    <!-- <input type="text" name="customer" value="{{ f_customer }}" list="custList" placeholder="Заказчик" class="inp" style="width:90px;flex:none;padding:8px 10px" autocomplete="off" onchange="this.form.submit()">
     <datalist id="custList">{% for c in customers %}<option value="{{ c }}">{% endfor %}</datalist>
     <input type="month" name="month" value="{{ f_month }}" class="inp" style="flex:none;padding:8px 8px" title="Выбрать месяц"
-           onchange="var f=this.form;f.date_from.value='';f.date_to.value='';f.submit()">
+           onchange="var f=this.form;f.date_from.value='';f.date_to.value='';f.submit()"> -->
     <a href="/dashboard?month={{ cur_month }}" class="btn btn-light" style="padding:8px 12px;flex:none;white-space:nowrap">📅 Текущий месяц</a>
     <span style="color:#64748b;flex:none">С</span>
     <input type="date" name="date_from" value="{{ f_date_from }}" class="inp" style="padding:8px 6px;flex:none;width:135px"
