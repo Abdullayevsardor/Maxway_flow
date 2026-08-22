@@ -405,6 +405,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
     _today = datetime.utcnow() + timedelta(hours=5)
     month_start = _today.replace(day=1).strftime("%Y-%m-%d")
     today_str = _today.strftime("%Y-%m-%d")
+    cur_month = _today.strftime("%Y-%m")
 
     ctx = {
         "request": request, "user": user, "active": "dashboard",
@@ -426,6 +427,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
         "f_customer": customer, "f_date_from": date_from, "f_date_to": date_to,
         "f_unassigned": unassigned, "f_month": month,
         "customers": sorted(customers), "month_start": month_start, "today_str": today_str,
+        "cur_month": cur_month,
     }
     return templates.TemplateResponse(request, "dashboard.html", ctx)
 
