@@ -18,11 +18,24 @@
   {% endif %}
 </div>
 
-<div class="stats">
-  <div class="stat"><div class="label">Всего заявок</div><div class="val ic-blue">📄 {{ total }}</div></div>
-  <div class="stat"><div class="label">Новые</div><div class="val ic-orange">◉ {{ new }}</div></div>
-  <div class="stat"><div class="label">В работе</div><div class="val ic-cyan">◷ {{ in_progress }}</div></div>
-  <div class="stat"><div class="label">Выполнены</div><div class="val ic-green">✓ {{ done }}</div></div>
+<style>
+  .mini-stat{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:10px;background:#fff;border:1px solid var(--border);font-size:13px;color:#475569}
+  .mini-stat b{font-size:15px;color:#0f172a}
+  .mini-cat{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;text-decoration:none;color:#334155;background:#fff}
+  .mini-cat.active{background:#dbeafe;border-color:#93c5fd}
+  .mini-cat b{color:#2563eb}
+</style>
+<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px">
+  <span class="mini-stat">📄 Всего <b>{{ total }}</b></span>
+  <span class="mini-stat">◉ Новые <b>{{ new }}</b></span>
+  <span class="mini-stat">◷ В работе <b>{{ in_progress }}</b></span>
+  <span class="mini-stat">✓ Выполнены <b>{{ done }}</b></span>
+  {% if kpp_groups is none and departments %}
+  <span style="width:1px;height:22px;background:var(--border);margin:0 4px"></span>
+  {% for d in departments %}
+  <a href="/dashboard?department_id={{ d.id }}" class="mini-cat {{ 'active' if f_dep==d.id }}">{{ d.name }} <b>{{ dep_counts.get(d.id,0) }}</b></a>
+  {% endfor %}
+  {% endif %}
 </div>
 
 {% if kpp_groups is not none %}
@@ -56,47 +69,38 @@
 
 {% else %}
 
-{# ==== Мои категории — компактно, над фильтром ==== #}
-{% if departments %}
-<div class="panel" style="padding:12px 16px;margin-bottom:14px">
-  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-    <span style="font-weight:700;color:#475569;font-size:13px;margin-right:2px">🏷 Категории:</span>
-    {% for d in departments %}
-    <a href="/dashboard?department_id={{ d.id }}" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;text-decoration:none;color:#334155;background:{{ '#dbeafe' if f_dep==d.id else '#fff' }}">
-      {{ d.name }} <span class="badge">{{ dep_counts.get(d.id, 0) }}</span></a>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-{# ==== Фильтр (одна строка) ==== #}
+{# ==== Фильтр ==== #}
 <div class="panel" style="padding:12px 16px;margin-bottom:16px">
-  <form method="get" action="/dashboard" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+  <form method="get" action="/dashboard" style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;font-size:13px">
     {% if departments|length > 1 %}
-    <select name="department_id" id="fDep" class="inp" style="min-width:140px;padding:9px 12px" onchange="fillSubs()">
+    <select name="department_id" id="fDep" class="inp" style="min-width:120px;padding:8px 10px" onchange="fillSubs()">
       <option value="">Категория</option>
       {% for d in departments %}<option value="{{ d.id }}" {{ 'selected' if f_dep==d.id }}>{{ d.name }}</option>{% endfor %}
     </select>
-    <select name="subcategory_id" id="fSub" class="inp" style="min-width:150px;padding:9px 12px">
+    <select name="subcategory_id" id="fSub" class="inp" style="min-width:130px;padding:8px 10px">
       <option value="">Подкатегория</option>
     </select>
     {% else %}
     {% if departments %}<input type="hidden" name="department_id" value="{{ departments[0].id }}">{% endif %}
-    <select name="subcategory_id" class="inp" style="min-width:150px;padding:9px 12px">
+    <select name="subcategory_id" class="inp" style="min-width:130px;padding:8px 10px">
       <option value="">Подкатегория</option>
       {% if departments %}{% for s in departments[0].subcategories %}<option value="{{ s.id }}" {{ 'selected' if f_sub==s.id }}>{{ s.name }}</option>{% endfor %}{% endif %}
     </select>
     {% endif %}
-    <select name="assignee" class="inp" style="min-width:140px;padding:9px 12px">
+    <select name="assignee" class="inp" style="min-width:130px;padding:8px 10px">
       <option value="">Исполнитель</option>
       {% for e in executors %}<option value="{{ e.id }}" {{ 'selected' if f_asg==e.id }}>{{ e.full_name }}</option>{% endfor %}
     </select>
-    <input type="text" name="customer" value="{{ f_customer }}" placeholder="Заказчик" class="inp" style="min-width:120px;padding:9px 12px">
-    <input type="date" name="date_from" value="{{ f_date_from }}" class="inp" title="Дата с" style="padding:9px 10px">
-    <input type="date" name="date_to" value="{{ f_date_to }}" class="inp" title="Дата по" style="padding:9px 10px">
+    <input type="text" name="customer" value="{{ f_customer }}" list="custList" placeholder="Заказчик" class="inp" style="min-width:120px;padding:8px 10px" autocomplete="off">
+    <datalist id="custList">{% for c in customers %}<option value="{{ c }}">{% endfor %}</datalist>
+    <span style="color:#64748b">С</span>
+    <input type="date" name="date_from" value="{{ f_date_from }}" class="inp" style="padding:8px 8px">
+    <span style="color:#64748b">По</span>
+    <input type="date" name="date_to" value="{{ f_date_to }}" class="inp" style="padding:8px 8px">
     {% if f_unassigned %}<input type="hidden" name="unassigned" value="1">{% endif %}
-    <button type="submit" class="btn btn-blue">Фильтр</button>
-    <a href="/dashboard" class="btn btn-light">Сброс</a>
+    <a href="/dashboard?date_from={{ month_start }}&date_to={{ today_str }}" class="btn btn-light" style="padding:8px 12px">📅 Текущий месяц</a>
+    <button type="submit" class="btn btn-blue" style="padding:8px 16px">Фильтр</button>
+    <a href="/dashboard" class="btn btn-light" style="padding:8px 12px">Сброс</a>
   </form>
 </div>
 {% if departments|length > 1 %}

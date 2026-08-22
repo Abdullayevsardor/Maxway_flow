@@ -121,7 +121,7 @@ button{font-family:inherit;cursor:pointer;border:none}
 }
 .user-pill{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px}
 
-.content{padding:28px;max-width:1180px;width:100%}
+.content{padding:28px;max-width:1700px;width:100%}
 .page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:26px;gap:16px;flex-wrap:wrap}
 .page-head h1{font-size:28px;font-weight:800;letter-spacing:-.5px}
 .page-head p{color:var(--muted);margin-top:4px;font-size:15px}

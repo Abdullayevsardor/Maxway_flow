@@ -391,6 +391,12 @@ def dashboard(request: Request, db: Session = Depends(get_db),
     subcats_map = {}
     for d in scoped_departments(db, user):
         subcats_map[d.id] = [{"id": s.id, "name": s.name} for s in d.subcategories]
+    # zakazchiklar ro'yxati (datalist uchun)
+    customers = [c[0] for c in base_requests(db, user).with_entities(models.Request.customer_name)
+                 .filter(models.Request.customer_name != "").distinct().all() if c[0]]
+    _today = datetime.utcnow() + timedelta(hours=5)
+    month_start = _today.replace(day=1).strftime("%Y-%m-%d")
+    today_str = _today.strftime("%Y-%m-%d")
 
     ctx = {
         "request": request, "user": user, "active": "dashboard",
@@ -411,6 +417,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
         "f_dep": f_dep, "f_sub": f_sub, "f_asg": f_asg,
         "f_customer": customer, "f_date_from": date_from, "f_date_to": date_to,
         "f_unassigned": unassigned,
+        "customers": sorted(customers), "month_start": month_start, "today_str": today_str,
     }
     return templates.TemplateResponse(request, "dashboard.html", ctx)
 
