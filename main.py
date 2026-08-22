@@ -336,13 +336,14 @@ def logout():
 
 # ===================== DASHBOARD =====================
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request, db: Session = Depends(get_db)):
+def dashboard(request: Request, db: Session = Depends(get_db),
+              department_id: str = "", subcategory_id: str = "", assignee: str = "",
+              customer: str = "", date_from: str = "", date_to: str = "", unassigned: str = ""):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
     q = base_requests(db, user)
     from sqlalchemy import func as _func
-    # har bo'lim bo'yicha foydalanuvchining o'z zayavkalari soni
     dep_counts = dict(q.with_entities(models.Request.department_id, _func.count(models.Request.id))
                       .group_by(models.Request.department_id).all())
     # КПП uchun: zayavkalar filial va kategoriya bo'yicha guruhlangan
@@ -356,6 +357,41 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         kpp_groups = [{"branch": bn,
                        "cats": [{"cat": cn, "items": tmp[bn][cn]} for cn in sorted(tmp[bn])]}
                       for bn in sorted(tmp)]
+
+    # ---- Filtrlar (dashboardda) ----
+    f_dep = int(department_id) if str(department_id).isdigit() else None
+    f_sub = int(subcategory_id) if str(subcategory_id).isdigit() else None
+    f_asg = int(assignee) if str(assignee).isdigit() else None
+    fq = base_requests(db, user)
+    if f_dep:
+        fq = fq.filter(models.Request.department_id == f_dep)
+    if f_sub:
+        fq = fq.filter(models.Request.subcategory_id == f_sub)
+    if f_asg:
+        fq = fq.filter(models.Request.assignees.any(models.User.id == f_asg))
+    if customer.strip():
+        fq = fq.filter(models.Request.customer_name.ilike(f"%{customer.strip()}%"))
+    if unassigned:
+        fq = fq.filter(~models.Request.assignees.any(),
+                       models.Request.status.notin_([Status.done, Status.rejected]))
+    if date_from.strip():
+        try:
+            fq = fq.filter(models.Request.created_at >= datetime.strptime(date_from.strip(), "%Y-%m-%d"))
+        except ValueError:
+            pass
+    if date_to.strip():
+        try:
+            fq = fq.filter(models.Request.created_at < datetime.strptime(date_to.strip(), "%Y-%m-%d") + timedelta(days=1))
+        except ValueError:
+            pass
+    filtered = fq.order_by(models.Request.created_at.desc()).all()
+    any_filter = bool(f_dep or f_sub or f_asg or customer.strip() or unassigned or date_from.strip() or date_to.strip())
+
+    # bo'lim -> podkategoriyalar (dinamik filtr uchun)
+    subcats_map = {}
+    for d in scoped_departments(db, user):
+        subcats_map[d.id] = [{"id": s.id, "name": s.name} for s in d.subcategories]
+
     ctx = {
         "request": request, "user": user, "active": "dashboard",
         "total": q.count(),
@@ -368,21 +404,33 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "dep_counts": dep_counts,
         "kpp_groups": kpp_groups,
         "recent": q.order_by(models.Request.created_at.desc()).limit(10).all(),
+        # filtr
+        "filtered": filtered, "any_filter": any_filter,
+        "executors": scoped_executors(db, user),
+        "subcats_map": subcats_map,
+        "f_dep": f_dep, "f_sub": f_sub, "f_asg": f_asg,
+        "f_customer": customer, "f_date_from": date_from, "f_date_to": date_to,
+        "f_unassigned": unassigned,
     }
     return templates.TemplateResponse(request, "dashboard.html", ctx)
 
 
 # ===================== ZAYAVKALAR =====================
 @app.get("/requests", response_class=HTMLResponse)
-def requests_page(request: Request, department_id: Optional[int] = None,
+def requests_page(request: Request, department_id: str = "",
                   status: Optional[str] = None, q: Optional[str] = None,
-                  subcategory_id: Optional[int] = None, date_from: str = "", date_to: str = "",
-                  customer: str = "", assignee: Optional[int] = None,
-                  unassigned: Optional[int] = None,
+                  subcategory_id: str = "", date_from: str = "", date_to: str = "",
+                  customer: str = "", assignee: str = "",
+                  unassigned: str = "",
                   db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
+    # bo'sh qatorlarni xavfsiz int/None ga aylantiramiz
+    department_id = int(department_id) if str(department_id).isdigit() else None
+    subcategory_id = int(subcategory_id) if str(subcategory_id).isdigit() else None
+    assignee = int(assignee) if str(assignee).isdigit() else None
+    unassigned = 1 if unassigned else None
     query = base_requests(db, user)
     if department_id:
         query = query.filter(models.Request.department_id == department_id)
