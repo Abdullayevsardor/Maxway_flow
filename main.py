@@ -338,7 +338,8 @@ def logout():
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db),
               department_id: str = "", subcategory_id: str = "", assignee: str = "",
-              customer: str = "", date_from: str = "", date_to: str = "", unassigned: str = ""):
+              customer: str = "", date_from: str = "", date_to: str = "", unassigned: str = "",
+              month: str = ""):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
@@ -374,6 +375,13 @@ def dashboard(request: Request, db: Session = Depends(get_db),
     if unassigned:
         fq = fq.filter(~models.Request.assignees.any(),
                        models.Request.status.notin_([Status.done, Status.rejected]))
+    if month.strip():
+        try:
+            m0 = datetime.strptime(month.strip(), "%Y-%m")
+            m1 = m0.replace(year=m0.year + 1, month=1) if m0.month == 12 else m0.replace(month=m0.month + 1)
+            fq = fq.filter(models.Request.created_at >= m0, models.Request.created_at < m1)
+        except ValueError:
+            pass
     if date_from.strip():
         try:
             fq = fq.filter(models.Request.created_at >= datetime.strptime(date_from.strip(), "%Y-%m-%d"))
@@ -385,7 +393,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
         except ValueError:
             pass
     filtered = fq.order_by(models.Request.created_at.desc()).all()
-    any_filter = bool(f_dep or f_sub or f_asg or customer.strip() or unassigned or date_from.strip() or date_to.strip())
+    any_filter = bool(f_dep or f_sub or f_asg or customer.strip() or unassigned or month.strip() or date_from.strip() or date_to.strip())
 
     # bo'lim -> podkategoriyalar (dinamik filtr uchun)
     subcats_map = {}
@@ -416,7 +424,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
         "subcats_map": subcats_map,
         "f_dep": f_dep, "f_sub": f_sub, "f_asg": f_asg,
         "f_customer": customer, "f_date_from": date_from, "f_date_to": date_to,
-        "f_unassigned": unassigned,
+        "f_unassigned": unassigned, "f_month": month,
         "customers": sorted(customers), "month_start": month_start, "today_str": today_str,
     }
     return templates.TemplateResponse(request, "dashboard.html", ctx)
