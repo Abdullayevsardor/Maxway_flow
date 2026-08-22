@@ -25,72 +25,6 @@
   <div class="stat"><div class="label">Выполнены</div><div class="val ic-green">✓ {{ done }}</div></div>
 </div>
 
-{% if kpp_groups is none %}
-<div class="panel" style="padding:14px 18px;margin-bottom:18px">
-  <form method="get" action="/dashboard" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-    <select name="department_id" id="fDep" class="inp" style="min-width:150px;padding:9px 12px" onchange="fillSubs()">
-      <option value="">Категория</option>
-      {% for d in departments %}<option value="{{ d.id }}" {{ 'selected' if f_dep==d.id }}>{{ d.name }}</option>{% endfor %}
-    </select>
-    <select name="subcategory_id" id="fSub" class="inp" style="min-width:150px;padding:9px 12px">
-      <option value="">Подкатегория</option>
-    </select>
-    <select name="assignee" class="inp" style="min-width:150px;padding:9px 12px">
-      <option value="">Исполнитель</option>
-      {% for e in executors %}<option value="{{ e.id }}" {{ 'selected' if f_asg==e.id }}>{{ e.full_name }}</option>{% endfor %}
-    </select>
-    <input type="text" name="customer" value="{{ f_customer }}" placeholder="Заказчик" class="inp" style="min-width:130px;padding:9px 12px">
-    <input type="date" name="date_from" value="{{ f_date_from }}" class="inp" title="Дата с" style="padding:9px 12px">
-    <input type="date" name="date_to" value="{{ f_date_to }}" class="inp" title="Дата по" style="padding:9px 12px">
-    {% if f_unassigned %}<input type="hidden" name="unassigned" value="1">{% endif %}
-    <button type="submit" class="btn btn-blue">Фильтр</button>
-    <a href="/dashboard" class="btn btn-light">Сброс</a>
-  </form>
-</div>
-<script>
-  var SUBS = {{ subcats_map|tojson }};
-  var CUR_SUB = "{{ f_sub or '' }}";
-  function fillSubs(){
-    var dep = document.getElementById('fDep').value;
-    var sub = document.getElementById('fSub');
-    sub.innerHTML = '<option value="">Подкатегория</option>';
-    (SUBS[dep] || []).forEach(function(s){
-      var o = document.createElement('option');
-      o.value = s.id; o.textContent = s.name;
-      if(String(s.id) === CUR_SUB) o.selected = true;
-      sub.appendChild(o);
-    });
-  }
-  fillSubs();
-</script>
-
-{% if any_filter %}
-<style>
-  table.compact th, table.compact td{padding:7px 10px;font-size:13px}
-  table.compact .tag{font-size:11px;padding:2px 7px}
-</style>
-<div class="panel">
-  <div class="panel-head"><div class="title">🔎 Результаты фильтра <span class="badge">{{ filtered|length }}</span></div></div>
-  <table class="compact">
-    <thead><tr><th>#</th><th>Название</th><th>Статус</th><th>Категория</th><th>Заказчик</th><th>Исполнитель</th><th>Создана</th></tr></thead>
-    <tbody>
-      {% for r in filtered %}
-      <tr onclick="location.href='/requests/{{ r.id }}'" style="cursor:pointer">
-        <td data-label="#">{{ r.dep_number or r.id }}</td>
-        <td data-label="Название"><strong style="color:var(--blue)">{{ r.title }}</strong></td>
-        <td data-label="Статус"><span class="tag {{ r.status.value }}">{{ STATUS_LABELS[r.status.value] }}</span></td>
-        <td data-label="Категория">{{ r.department.name if r.department else '—' }}</td>
-        <td data-label="Заказчик">{{ r.customer_name or '—' }}</td>
-        <td data-label="Исполнитель">{{ r.assignees|map(attribute='full_name')|join(', ') if r.assignees else '—' }}</td>
-        <td data-label="Создана" style="color:#94a3b8;font-size:13px">{{ r.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
-      </tr>
-      {% else %}<tr><td colspan="7" class="empty">Ничего не найдено</td></tr>{% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-{% endif %}
-
 {% if kpp_groups is not none %}
 {% for g in kpp_groups %}
 <div class="panel">
@@ -120,28 +54,100 @@
 <div class="panel"><div class="panel-body"><p style="color:#94a3b8;margin:0">Заявок по вашим филиалам пока нет</p></div></div>
 {% endfor %}
 
-{% elif not any_filter %}
-<div class="panel">
-  <div class="panel-head"><div class="title">🏷 Мои категории <span class="badge">{{ departments|length }}</span></div></div>
-  <div class="panel-body">
-    <div class="cat-grid">
-      {% for d in departments %}
-      <a href="/requests?department_id={{ d.id }}" class="cat-card">
-        <div><div class="cname">{{ d.name }}</div><div class="ccount">{{ dep_counts.get(d.id, 0) }} заявок</div></div>
-      </a>
-      {% else %}<div class="empty">Категории не созданы</div>{% endfor %}
-    </div>
+{% else %}
+
+{# ==== Мои категории — компактно, над фильтром ==== #}
+{% if departments %}
+<div class="panel" style="padding:12px 16px;margin-bottom:14px">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <span style="font-weight:700;color:#475569;font-size:13px;margin-right:2px">🏷 Категории:</span>
+    {% for d in departments %}
+    <a href="/dashboard?department_id={{ d.id }}" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;text-decoration:none;color:#334155;background:{{ '#dbeafe' if f_dep==d.id else '#fff' }}">
+      {{ d.name }} <span class="badge">{{ dep_counts.get(d.id, 0) }}</span></a>
+    {% endfor %}
   </div>
 </div>
 {% endif %}
 
-{% if unassigned > 0 %}{% endif %}
+{# ==== Фильтр (одна строка) ==== #}
+<div class="panel" style="padding:12px 16px;margin-bottom:16px">
+  <form method="get" action="/dashboard" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    {% if departments|length > 1 %}
+    <select name="department_id" id="fDep" class="inp" style="min-width:140px;padding:9px 12px" onchange="fillSubs()">
+      <option value="">Категория</option>
+      {% for d in departments %}<option value="{{ d.id }}" {{ 'selected' if f_dep==d.id }}>{{ d.name }}</option>{% endfor %}
+    </select>
+    <select name="subcategory_id" id="fSub" class="inp" style="min-width:150px;padding:9px 12px">
+      <option value="">Подкатегория</option>
+    </select>
+    {% else %}
+    {% if departments %}<input type="hidden" name="department_id" value="{{ departments[0].id }}">{% endif %}
+    <select name="subcategory_id" class="inp" style="min-width:150px;padding:9px 12px">
+      <option value="">Подкатегория</option>
+      {% if departments %}{% for s in departments[0].subcategories %}<option value="{{ s.id }}" {{ 'selected' if f_sub==s.id }}>{{ s.name }}</option>{% endfor %}{% endif %}
+    </select>
+    {% endif %}
+    <select name="assignee" class="inp" style="min-width:140px;padding:9px 12px">
+      <option value="">Исполнитель</option>
+      {% for e in executors %}<option value="{{ e.id }}" {{ 'selected' if f_asg==e.id }}>{{ e.full_name }}</option>{% endfor %}
+    </select>
+    <input type="text" name="customer" value="{{ f_customer }}" placeholder="Заказчик" class="inp" style="min-width:120px;padding:9px 12px">
+    <input type="date" name="date_from" value="{{ f_date_from }}" class="inp" title="Дата с" style="padding:9px 10px">
+    <input type="date" name="date_to" value="{{ f_date_to }}" class="inp" title="Дата по" style="padding:9px 10px">
+    {% if f_unassigned %}<input type="hidden" name="unassigned" value="1">{% endif %}
+    <button type="submit" class="btn btn-blue">Фильтр</button>
+    <a href="/dashboard" class="btn btn-light">Сброс</a>
+  </form>
+</div>
+{% if departments|length > 1 %}
+<script>
+  var SUBS = {{ subcats_map|tojson }};
+  var CUR_SUB = "{{ f_sub or '' }}";
+  function fillSubs(){
+    var dep = document.getElementById('fDep').value;
+    var sub = document.getElementById('fSub');
+    sub.innerHTML = '<option value="">Подкатегория</option>';
+    (SUBS[dep] || []).forEach(function(s){
+      var o = document.createElement('option');
+      o.value = s.id; o.textContent = s.name;
+      if(String(s.id) === CUR_SUB) o.selected = true;
+      sub.appendChild(o);
+    });
+  }
+  fillSubs();
+</script>
+{% endif %}
 
-{% if kpp_groups is none and not any_filter %}
+<style>
+  table.compact th, table.compact td{padding:7px 10px;font-size:13px}
+  table.compact .tag{font-size:11px;padding:2px 7px}
+</style>
+
+{% if any_filter %}
+<div class="panel">
+  <div class="panel-head"><div class="title">🔎 Результаты фильтра <span class="badge">{{ filtered|length }}</span></div></div>
+  <table class="compact">
+    <thead><tr><th>#</th><th>Название</th><th>Статус</th><th>Категория</th><th>Заказчик</th><th>Исполнитель</th><th>Создана</th></tr></thead>
+    <tbody>
+      {% for r in filtered %}
+      <tr onclick="location.href='/requests/{{ r.id }}'" style="cursor:pointer">
+        <td data-label="#">{{ r.dep_number or r.id }}</td>
+        <td data-label="Название"><strong style="color:var(--blue)">{{ r.title }}</strong></td>
+        <td data-label="Статус"><span class="tag {{ r.status.value }}">{{ STATUS_LABELS[r.status.value] }}</span></td>
+        <td data-label="Категория">{{ r.department.name if r.department else '—' }}</td>
+        <td data-label="Заказчик">{{ r.customer_name or '—' }}</td>
+        <td data-label="Исполнитель">{{ r.assignees|map(attribute='full_name')|join(', ') if r.assignees else '—' }}</td>
+        <td data-label="Создана" style="color:#94a3b8;font-size:13px">{{ r.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+      </tr>
+      {% else %}<tr><td colspan="7" class="empty">Ничего не найдено</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
 <div class="panel">
   <div class="panel-head"><div class="title">📄 Последние заявки <span class="badge">{{ recent|length }}</span></div>
     <a href="/requests" class="link-blue">Все заявки →</a></div>
-  <table>
+  <table class="compact">
     <thead><tr><th>#</th><th>Название</th><th>Статус</th><th>Приоритет</th><th>Создан</th></tr></thead>
     <tbody>
       {% for r in recent %}
@@ -156,5 +162,7 @@
     </tbody>
   </table>
 </div>
+{% endif %}
+
 {% endif %}
 {% endblock %}
