@@ -91,10 +91,12 @@
       <option value="">Исполнитель</option>
       {% for e in executors %}<option value="{{ e.id }}" {{ 'selected' if f_asg==e.id }}>{{ e.full_name }}</option>{% endfor %}
     </select>
+    {% if user.role.value != 'client' %}
     <select name="branch_id" class="inp" style="flex:none;padding:8px 10px" onchange="this.form.submit()">
       <option value="">Филиал</option>
       {% for b in branches %}<option value="{{ b.id }}" {{ 'selected' if f_branch==b.id }}>{{ b.name }}</option>{% endfor %}
     </select>
+    {% endif %}
     <a href="/dashboard?month={{ cur_month }}" class="btn btn-light" style="padding:8px 12px;flex:none;white-space:nowrap">📅 Текущий месяц</a>
     <span style="color:#64748b;flex:none">С</span>
     <input type="date" name="date_from" value="{{ f_date_from }}" class="inp" style="padding:8px 6px;flex:none;width:135px"
