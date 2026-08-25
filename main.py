@@ -339,7 +339,7 @@ def logout():
 def dashboard(request: Request, db: Session = Depends(get_db),
               department_id: str = "", subcategory_id: str = "", assignee: str = "",
               customer: str = "", date_from: str = "", date_to: str = "", unassigned: str = "",
-              month: str = ""):
+              month: str = "", branch_id: str = ""):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
@@ -363,6 +363,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
     f_dep = int(department_id) if str(department_id).isdigit() else None
     f_sub = int(subcategory_id) if str(subcategory_id).isdigit() else None
     f_asg = int(assignee) if str(assignee).isdigit() else None
+    f_branch = int(branch_id) if str(branch_id).isdigit() else None
     fq = base_requests(db, user)
     if f_dep:
         fq = fq.filter(models.Request.department_id == f_dep)
@@ -370,6 +371,8 @@ def dashboard(request: Request, db: Session = Depends(get_db),
         fq = fq.filter(models.Request.subcategory_id == f_sub)
     if f_asg:
         fq = fq.filter(models.Request.assignees.any(models.User.id == f_asg))
+    if f_branch:
+        fq = fq.filter(models.Request.branch_id == f_branch)
     if customer.strip():
         fq = fq.filter(models.Request.customer_name.ilike(f"%{customer.strip()}%"))
     if unassigned:
@@ -393,7 +396,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
         except ValueError:
             pass
     filtered = fq.order_by(models.Request.created_at.desc()).all()
-    any_filter = bool(f_dep or f_sub or f_asg or customer.strip() or unassigned or month.strip() or date_from.strip() or date_to.strip())
+    any_filter = bool(f_dep or f_sub or f_asg or f_branch or customer.strip() or unassigned or month.strip() or date_from.strip() or date_to.strip())
 
     # bo'lim -> podkategoriyalar (dinamik filtr uchun)
     subcats_map = {}
@@ -428,6 +431,8 @@ def dashboard(request: Request, db: Session = Depends(get_db),
         "f_unassigned": unassigned, "f_month": month,
         "customers": sorted(customers), "month_start": month_start, "today_str": today_str,
         "cur_month": cur_month,
+        "branches": db.query(models.Branch).order_by(models.Branch.name).all(),
+        "f_branch": f_branch,
     }
     return templates.TemplateResponse(request, "dashboard.html", ctx)
 
