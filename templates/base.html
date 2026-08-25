@@ -109,12 +109,22 @@
   })();
   function toggleMenu(){
     if(window.innerWidth>760){
-      document.getElementById('layout').classList.toggle('collapsed');
+      var collapsed = document.getElementById('layout').classList.toggle('collapsed');
+      try{ localStorage.setItem('mwSidebar', collapsed ? '1':'0'); }catch(_){}
     } else {
       document.getElementById('sidebar').classList.toggle('open');
       document.getElementById('backdrop').classList.toggle('open');
     }
   }
+  // svernut holatini tiklash (sahifa qayta yuklanganda)
+  (function(){
+    try{
+      if(localStorage.getItem('mwSidebar')==='1' && window.innerWidth>760){
+        var l=document.getElementById('layout');
+        if(l) l.classList.add('collapsed');
+      }
+    }catch(_){}
+  })();
   function toggleUser(){document.getElementById('userDrop').classList.toggle('open')}
   async function toggleNotif(){
     const p=document.getElementById('notifPanel');

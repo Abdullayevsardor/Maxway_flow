@@ -352,7 +352,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
     if user.role == Role.kpp:
         tmp = {}
         for r in q.order_by(models.Request.created_at.desc()).all():
-            bn = r.branch.name if r.branch else "—"
+            bn = r.branch_obj.name if r.branch_obj else (r.branch or "—")
             cn = r.department.name if r.department else "—"
             tmp.setdefault(bn, {}).setdefault(cn, []).append(r)
         kpp_groups = [{"branch": bn,

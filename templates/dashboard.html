@@ -143,7 +143,7 @@
         <td data-label="Название"><strong style="color:var(--blue)">{{ r.title }}</strong></td>
         <td data-label="Статус"><span class="tag {{ r.status.value }}">{{ STATUS_LABELS[r.status.value] }}</span></td>
         <td data-label="Категория">{{ r.department.name if r.department else '—' }}</td>
-        <td data-label="Филиал">{{ r.branch.name if r.branch else '—' }}</td>
+        <td data-label="Филиал">{{ r.branch_obj.name if r.branch_obj else (r.branch or '—') }}</td>
         <td data-label="Исполнитель">{{ r.assignees|map(attribute='full_name')|join(', ') if r.assignees else '—' }}</td>
         <td data-label="Создана" style="color:#94a3b8;font-size:13px">{{ r.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
       </tr>
