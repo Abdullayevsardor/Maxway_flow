@@ -34,7 +34,7 @@
 <div class="panel">
   <table class="compact">
     <thead>
-      <tr><th>#</th><th>Название</th><th>Статус</th><th>Приоритет</th><th>Категория</th><th>Заказчик</th><th>Исполнитель</th><th>Дедлайн</th></tr>
+      <tr><th>#</th><th>Название</th><th>Статус</th><th>Приоритет</th><th>Категория</th><th>Филиал</th><th>Исполнитель</th><th>Дедлайн</th></tr>
     </thead>
     <tbody>
       {% for r in items %}
@@ -47,7 +47,7 @@
         <td data-label="Статус"><span class="tag {{ r.status.value }}">{{ STATUS_LABELS[r.status.value] }}</span></td>
         <td data-label="Приоритет"><span class="tag {{ r.priority.value }}">{{ PRIORITY_LABELS[r.priority.value] }}</span></td>
         <td data-label="Категория">{{ r.department.name }}</td>
-        <td data-label="Заказчик">{{ r.customer_name or "—" }}</td>
+        <td data-label="Филиал">{{ r.branch_obj.name if r.branch_obj else (r.branch or "—") }}</td>
         <td data-label="Исполнитель">{{ r.assignees|map(attribute='full_name')|join(', ') if r.assignees else "—" }}</td>
         <td data-label="Дедлайн" style="color:{{ '#dc2626' if r.is_overdue else 'inherit' }}">{{ r.deadline.strftime('%d.%m.%Y %H:%M') if r.deadline else "—" }}</td>
       </tr>
