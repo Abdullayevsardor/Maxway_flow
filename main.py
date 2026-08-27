@@ -1552,7 +1552,9 @@ def can_manage_menu(user):
 
 
 @app.get("/stoplist", response_class=HTMLResponse)
-def stoplist_page(request: Request, sync: str = "", db: Session = Depends(get_db)):
+def stoplist_page(request: Request, sync: str = "", branch_id: str = "",
+                  date_from: str = "", date_to: str = "", month: str = "",
+                  db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
@@ -1564,12 +1566,38 @@ def stoplist_page(request: Request, sync: str = "", db: Session = Depends(get_db
     q = db.query(models.StopEntry).filter(models.StopEntry.resolved == False)
     if is_client:
         q = q.filter(models.StopEntry.branch_id == user.user_branch_id)
+    # ---- Filtrlar (dashboarddagidek) ----
+    f_branch = int(branch_id) if str(branch_id).isdigit() else None
+    if f_branch and not is_client:
+        q = q.filter(models.StopEntry.branch_id == f_branch)
+    if month.strip():
+        try:
+            m0 = datetime.strptime(month.strip(), "%Y-%m")
+            m1 = m0.replace(year=m0.year + 1, month=1) if m0.month == 12 else m0.replace(month=m0.month + 1)
+            q = q.filter(models.StopEntry.created_at >= m0, models.StopEntry.created_at < m1)
+        except ValueError:
+            pass
+    if date_from.strip():
+        try:
+            q = q.filter(models.StopEntry.created_at >= datetime.strptime(date_from.strip(), "%Y-%m-%d"))
+        except ValueError:
+            pass
+    if date_to.strip():
+        try:
+            q = q.filter(models.StopEntry.created_at < datetime.strptime(date_to.strip(), "%Y-%m-%d") + timedelta(days=1))
+        except ValueError:
+            pass
     entries = q.order_by(models.StopEntry.created_at.desc()).all()
+    branches = db.query(models.Branch).order_by(models.Branch.name).all() if not is_client else []
+    cur_month = (datetime.utcnow() + timedelta(hours=5)).strftime("%Y-%m")
     return templates.TemplateResponse(request, "stoplist.html", {
         "request": request, "user": user, "active": "stoplist",
         "menu_items": menu_items, "entries": entries, "is_client": is_client,
         "can_resolve": has_perm(user, "resolve_stop"),
         "can_comment": has_perm(user, "comment_stop"), "sync_msg": sync,
+        "branches": branches, "f_branch": f_branch,
+        "f_date_from": date_from, "f_date_to": date_to, "f_month": month,
+        "cur_month": cur_month,
     })
 
 

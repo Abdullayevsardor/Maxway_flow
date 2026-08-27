@@ -2,30 +2,52 @@
 {% block title %}Стоп-лист{% endblock %}
 {% block content %}
 
-{% macro stop_table(rows, can_resolve, can_comment) %}
-<table>
+<style>
+  .stop-tbl{width:100%;border-collapse:separate;border-spacing:0}
+  .stop-tbl thead th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#94a3b8;font-weight:700;text-align:left;padding:0 14px 10px}
+  .stop-tbl tbody tr{background:#fff;transition:box-shadow .12s,transform .12s}
+  .stop-tbl tbody tr:hover{box-shadow:0 2px 10px rgba(15,23,42,.06)}
+  .stop-tbl td{padding:12px 14px;border-top:1px solid var(--border);vertical-align:middle}
+  .stop-tbl tbody tr td:first-child{border-left:3px solid #f59e0b;border-radius:10px 0 0 10px}
+  .stop-tbl tbody tr td:last-child{border-radius:0 10px 10px 0}
+  .when-cell{white-space:nowrap}
+  .when-cell .d{font-weight:700;color:#334155;font-size:13.5px}
+  .when-cell .t{color:#94a3b8;font-size:12px;font-variant-numeric:tabular-nums}
+  .dish-cell{font-weight:700;color:#0f172a;font-size:14.5px}
+  .branch-cell{font-weight:600;color:#475569;font-size:13.5px;white-space:nowrap}
+  .reason-tag{display:inline-block;background:#fef3c7;color:#b45309;font-weight:600;font-size:12.5px;padding:4px 11px;border-radius:999px;white-space:nowrap}
+  .cmt-form{display:flex;gap:6px;margin:0;min-width:200px}
+  .btn-resolve{color:#16a34a;border-color:#86efac;white-space:nowrap}
+  .btn-resolve:hover{background:#f0fdf4}
+</style>
+{% macro stop_table(rows, can_resolve, can_comment, show_branch=False) %}
+<table class="stop-tbl">
   <thead><tr>
-    <th>БЛЮДО</th><th>ПРИЧИНА</th><th>КОММ. ФИЛИАЛА</th><th>КОММ. СНАБЖЕНИЯ</th><th>ДОБАВЛЕНО</th>{% if can_resolve %}<th></th>{% endif %}
+    <th style="width:120px">🕑 Добавлено</th>{% if show_branch %}<th>Филиал</th>{% endif %}<th>Блюдо</th><th>Причина</th><th>Комм. филиала</th><th>Комм. снабжения</th>{% if can_resolve %}<th style="width:1%"></th>{% endif %}
   </tr></thead>
   <tbody>
     {% for e in rows %}
     <tr>
-      <td data-label="Блюдо"><b>{{ e.menu_item.name if e.menu_item else "—" }}</b></td>
-      <td data-label="Причина"><span class="tag" style="background:#fef3c7;color:#b45309">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
+      <td data-label="Добавлено" class="when-cell">
+        <div class="d">{{ e.created_at.strftime('%d.%m.%Y') }}</div>
+        <div class="t">{{ e.created_at.strftime('%H:%M') }}</div>
+      </td>
+      {% if show_branch %}<td data-label="Филиал" class="branch-cell">{{ e.branch.name if e.branch else "—" }}</td>{% endif %}
+      <td data-label="Блюдо" class="dish-cell">{{ e.menu_item.name if e.menu_item else "—" }}</td>
+      <td data-label="Причина"><span class="reason-tag">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
       <td data-label="Комм. филиала">{{ e.comment or "—" }}</td>
       <td data-label="Комм. снабжения">
         {% if can_comment %}
-        <form method="post" action="/stoplist/{{ e.id }}/comment" autocomplete="off" style="display:flex;gap:6px;margin:0;min-width:200px">
+        <form method="post" action="/stoplist/{{ e.id }}/comment" autocomplete="off" class="cmt-form">
           <input type="text" name="comment" value="{{ e.supply_comment or '' }}" autocomplete="off" class="inp" style="padding:6px 8px;font-size:13px" placeholder="Комментарий...">
           <button type="submit" class="btn btn-light" style="padding:6px 10px" title="Сохранить">✓</button>
         </form>
         {% else %}{{ e.supply_comment or "—" }}{% endif %}
       </td>
-      <td data-label="Добавлено" style="color:#94a3b8;font-size:13px">{{ e.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
       {% if can_resolve %}
       <td>
         <form method="post" action="/stoplist/{{ e.id }}/resolve" style="margin:0" onsubmit="return confirm('Убрать из стоп-листа?')">
-          <button type="submit" class="btn btn-light" style="color:#16a34a;border-color:#86efac">✓ Убрать</button>
+          <button type="submit" class="btn btn-light btn-resolve">✓ Убрать</button>
         </form>
       </td>
       {% endif %}
@@ -116,22 +138,36 @@
 </div>
 {% endif %}
 
+{# ==== Фильтр (как на дашборде) ==== #}
+<div class="panel" style="padding:12px 16px;margin-bottom:16px">
+  <form method="get" action="/stoplist" style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap;overflow-x:auto;font-size:13px;padding-bottom:4px">
+    {% if not is_client %}
+    <select name="branch_id" class="inp" style="flex:none;padding:8px 10px" onchange="this.form.submit()">
+      <option value="">Филиал</option>
+      {% for b in branches %}<option value="{{ b.id }}" {{ 'selected' if f_branch==b.id }}>{{ b.name }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <a href="/stoplist?month={{ cur_month }}" class="btn btn-light" style="padding:8px 12px;flex:none;white-space:nowrap">📅 Текущий месяц</a>
+    <span style="color:#64748b;flex:none">С</span>
+    <input type="date" name="date_from" value="{{ f_date_from }}" class="inp" style="padding:8px 6px;flex:none;width:135px"
+           onchange="this.form.month.value='';this.form.submit()">
+    <span style="color:#64748b;flex:none">По</span>
+    <input type="date" name="date_to" value="{{ f_date_to }}" class="inp" style="padding:8px 6px;flex:none;width:135px"
+           onchange="this.form.month.value='';this.form.submit()">
+    <input type="hidden" name="month" value="{{ f_month }}">
+    <a href="/stoplist" class="btn btn-light" style="padding:8px 12px;flex:none;white-space:nowrap">Сброс</a>
+  </form>
+</div>
+
 <div class="panel">
   <div class="panel-head"><div class="title">
-    {% if is_client %}Мой стоп-лист{% else %}Стоп-лист · по филиалам{% endif %}
+    {% if is_client %}Мой стоп-лист{% else %}Стоп-лист{% endif %}
     <span class="badge">{{ entries|length }}</span></div></div>
   <div class="panel-body">
     {% if not entries %}
     <p style="color:#94a3b8;margin:0">Стоп-лист пуст 🎉</p>
-    {% elif is_client %}
-    {{ stop_table(entries, can_resolve, can_comment) }}
     {% else %}
-    {% for branch_name, items in entries|groupby('branch.name') %}
-    <div style="margin-bottom:22px">
-      <div style="font-weight:700;color:#1e293b;font-size:15px;margin-bottom:8px">🏪 {{ branch_name or '—' }} <span class="badge">{{ items|length }}</span></div>
-      {{ stop_table(items, can_resolve, can_comment) }}
-    </div>
-    {% endfor %}
+    {{ stop_table(entries, can_resolve, can_comment, show_branch=not is_client) }}
     {% endif %}
   </div>
 </div>
