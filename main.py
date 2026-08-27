@@ -356,7 +356,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
             cn = r.department.name if r.department else "—"
             tmp.setdefault(bn, {}).setdefault(cn, []).append(r)
         kpp_groups = [{"branch": bn,
-                       "cats": [{"cat": cn, "items": tmp[bn][cn]} for cn in sorted(tmp[bn])]}
+                       "cats": [{"cat": cn, "reqs": tmp[bn][cn]} for cn in sorted(tmp[bn])]}
                       for bn in sorted(tmp)]
 
     # ---- Filtrlar (dashboardda) ----
