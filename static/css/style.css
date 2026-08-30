@@ -834,3 +834,36 @@ img, video, table { max-width: 100%; }
   .head-actions{flex-direction:column;align-items:stretch}
   .head-actions .btn,.head-actions a{text-align:center;justify-content:center}
 }
+
+/* Ommaviy tanlash (stop-listdan bir vaqtda olib tashlash) */
+.pick{display:inline-flex;align-items:center;cursor:pointer;padding:2px}
+.pick input{position:absolute;opacity:0;pointer-events:none}
+.pick-box{width:19px;height:19px;border-radius:6px;border:2px solid #cbd5e1;
+  display:grid;place-items:center;transition:.12s;background:#fff}
+.pick-box::after{content:'';width:8px;height:4px;border-left:2px solid #fff;
+  border-bottom:2px solid #fff;transform:rotate(-45deg) scale(.4);opacity:0;
+  transition:.12s;margin-top:-2px}
+.pick:hover .pick-box{border-color:#93c5fd}
+.pick:has(input:checked) .pick-box{background:var(--blue);border-color:var(--blue)}
+.pick:has(input:checked) .pick-box::after{opacity:1;transform:rotate(-45deg) scale(1)}
+.pick:has(input:indeterminate) .pick-box{background:var(--blue);border-color:var(--blue)}
+.pick:has(input:indeterminate) .pick-box::after{opacity:1;width:9px;height:0;
+  border-bottom:2px solid #fff;border-left:none;transform:none;margin-top:0}
+.pick:has(input:focus-visible) .pick-box{outline:2px solid var(--blue);outline-offset:2px}
+.stop-tbl tbody tr:has(input[name="sid"]:checked){background:var(--blue-light)}
+.pick-cell{width:1%}
+
+.bulk-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  flex-wrap:wrap;margin-top:14px;padding:12px 16px;border-radius:12px;
+  background:var(--blue-light);border:1px solid #bfdbfe;color:#1e40af;font-size:14px}
+.bulk-bar b{font-size:16px}
+.bulk-bar > div{display:flex;gap:8px}
+.bulk-bar .btn:disabled{opacity:.6;cursor:not-allowed}
+@media(max-width:760px){
+  .bulk-bar{position:sticky;bottom:10px;flex-direction:column;align-items:stretch;
+    box-shadow:0 6px 20px rgba(15,23,42,.15)}
+  .bulk-bar > div{flex-direction:column}
+  .bulk-bar .btn{justify-content:center}
+  .pick-cell{position:absolute;right:10px;top:10px;width:auto}
+  .stop-tbl tbody tr{position:relative}
+}

@@ -680,3 +680,98 @@ def test_notify_preview_shows_sources(client, seed, db, monkeypatch):
     assert got["EMP1"] == "Сотрудник филиала"
     assert got["EMP2"] == "Сотрудник филиала"
     assert got["CHANNEL"] == "Канал"
+
+
+# ================= OMMAVIY OLIB TASHLASH =================
+def test_bulk_resolve_removes_all_selected(client, seed, db, tg, monkeypatch, fresh_dish):
+    """10 ta taomni bir vaqtda stopdan olish — bitta umumiy telegram xabari."""
+    import main
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "")
+    seed["supply"].telegram_chat_id = "SUPPLY"
+    db.commit()
+
+    login(client, seed["branch"])
+    ids = [fresh_dish() for _ in range(10)]
+    r = client.post("/api/product-stops", json={
+        "product_ids": ids, "reason": "supplier_no_product",
+        "branch_comment": "Нет сыра"})
+    assert r.status_code == 201, r.text
+    sids = [x["id"] for x in r.json()["created"]]
+    assert len(sids) == 10
+
+    tg.clear()
+    resp = client.post("/stoplist/resolve-bulk",
+                       data={"sid": [str(i) for i in sids]},
+                       follow_redirects=False)
+    assert resp.status_code == 302
+    assert "ok=" in resp.headers["location"]
+
+    # hammasi tarixga o'tdi
+    active = {i["id"] for i in client.get("/api/product-stops").json()["items"]}
+    assert not (set(sids) & active)
+    hist = {i["id"] for i in client.get("/api/product-stops?mode=history&page_size=100").json()["items"]}
+    assert set(sids) <= hist
+
+    # bitta umumiy xabar, 10 ta emas
+    to_supply = [t for c, t in tg if c == "SUPPLY"]
+    assert len(to_supply) == 1, f"{len(to_supply)} ta xabar ketdi"
+    assert "Блюда (10)" in to_supply[0]
+    assert "Снят со стопа" in to_supply[0]
+
+
+def test_bulk_resolve_checks_permission_per_entry(client, seed, db, fresh_dish):
+    """Begona filial yozuvi ro'yxatga qo'shilsa — 403, hech nima o'zgarmaydi."""
+    login(client, seed["admin"])
+    mine = client.post("/api/product-stops", json={
+        "product_ids": [fresh_dish()], "reason": "wrong_order",
+        "branch_id": seed["b1"].id}).json()["created"][0]["id"]
+    other = client.post("/api/product-stops", json={
+        "product_ids": [fresh_dish()], "reason": "wrong_order",
+        "branch_id": seed["b2"].id}).json()["created"][0]["id"]
+
+    login(client, seed["branch"])          # 12-filial
+    r = client.post("/stoplist/resolve-bulk",
+                    data={"sid": [str(mine), str(other)]})
+    assert r.status_code == 403
+    # ikkalasi ham stopda qolgan
+    assert client.get(f"/api/product-stops/{mine}").json()["resolved"] is False
+
+
+def test_bulk_resolve_empty_selection(client, seed):
+    login(client, seed["branch"])
+    r = client.post("/stoplist/resolve-bulk", data={}, follow_redirects=False)
+    assert r.status_code == 302
+    assert "err=" in r.headers["location"]
+
+
+def test_bulk_resolve_groups_message_per_branch(client, seed, db, tg, monkeypatch, fresh_dish):
+    """Admin turli filialdan olsa — har bir filialga o'z xabari."""
+    import main
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "")
+    seed["viewer"].telegram_chat_id = "VIEWER"
+    db.commit()
+    login(client, seed["admin"])
+    a = client.post("/api/product-stops", json={
+        "product_ids": [fresh_dish()], "reason": "menu_removed",
+        "branch_id": seed["b1"].id}).json()["created"][0]["id"]
+    b = client.post("/api/product-stops", json={
+        "product_ids": [fresh_dish()], "reason": "menu_removed",
+        "branch_id": seed["b2"].id}).json()["created"][0]["id"]
+    tg.clear()
+    client.post("/stoplist/resolve-bulk", data={"sid": [str(a), str(b)]})
+    texts = [t for c, t in tg if c == "VIEWER"]
+    assert len(texts) == 2, "har bir filial uchun alohida xabar kutilgan"
+    assert any("Ресторан №12" in t for t in texts)
+    assert any("Ресторан №7" in t for t in texts)
+
+
+def test_branch_cannot_resolve_other_branch_single(client, seed, db, fresh_dish):
+    """Filial BOSHQA filial yozuvini yakka tartibda ham stopdan ololmaydi."""
+    login(client, seed["admin"])
+    other = client.post("/api/product-stops", json={
+        "product_ids": [fresh_dish()], "reason": "wrong_order",
+        "branch_id": seed["b2"].id}).json()["created"][0]["id"]
+    login(client, seed["branch"])          # 12-filial
+    assert client.post(f"/stoplist/{other}/resolve").status_code == 403
+    login(client, seed["admin"])
+    assert client.get(f"/api/product-stops/{other}").json()["resolved"] is False

@@ -2146,25 +2146,46 @@ def _human_duration(delta) -> str:
     return " ".join(parts) or f"{mins} мин"
 
 
-def notify_stop_resolved(db: Session, e, actor):
-    """Taom stopdan olinganda telegram xabari — qo'shilgandagi bilan bir xil manzillarga."""
-    if not e:
+def notify_stop_resolved(db: Session, entries, actor):
+    """Stopdan olinganda telegram xabari. Bir nechta yozuv birga olinsa —
+    har bir filial uchun bitta umumiy xabar (spam bo'lmasin)."""
+    if not entries:
         return
-    branch = e.branch or db.get(models.Branch, e.branch_id)
-    lines = ["✅ <b>Снят со стопа — MAXWAY</b>", "",
-             f"🏢 Филиал: <b>{branch.name if branch else '—'}</b>",
-             f"🍽 Блюдо: <b>{e.menu_item.name if e.menu_item else '—'}</b>",
-             f"🏷 Причина была: {REASON_LABELS.get(e.reason, e.reason)}"]
-    if e.created_at and e.resolved_at:
-        lines.append(f"⏱ На стопе был: {_human_duration(e.resolved_at - e.created_at)}")
-    if e.supply_comment:
-        lines.append(f"💬 Комментарий снабжения: {e.supply_comment}")
-    lines.append(f"👤 Снял: {display_name(actor)}")
-    if e.resolved_at:
-        lines.append(f"🕑 {e.resolved_at.strftime('%d.%m.%Y %H:%M')}")
-    _send_async(stop_notify_targets(db, e.branch_id, actor),
-                "\n".join(lines), button_url=f"{get_app_url()}/stoplist/{e.id}",
-                token=get_stop_bot_token())
+    if not isinstance(entries, (list, tuple)):
+        entries = [entries]
+    # filiallar bo'yicha guruhlaymiz (admin bir vaqtda turli filialdan olishi mumkin)
+    by_branch = {}
+    for e in entries:
+        by_branch.setdefault(e.branch_id, []).append(e)
+
+    for br_id, items in by_branch.items():
+        branch = items[0].branch or db.get(models.Branch, br_id)
+        lines = ["✅ <b>Снят со стопа — MAXWAY</b>", "",
+                 f"🏢 Филиал: <b>{branch.name if branch else '—'}</b>"]
+        if len(items) == 1:
+            e = items[0]
+            lines.append(f"🍽 Блюдо: <b>{e.menu_item.name if e.menu_item else '—'}</b>")
+            lines.append(f"🏷 Причина была: {REASON_LABELS.get(e.reason, e.reason)}")
+            if e.created_at and e.resolved_at:
+                lines.append(f"⏱ На стопе был: {_human_duration(e.resolved_at - e.created_at)}")
+            if e.supply_comment:
+                lines.append(f"💬 Комментарий снабжения: {e.supply_comment}")
+            link = f"/stoplist/{e.id}"
+        else:
+            names = [(x.menu_item.name if x.menu_item else "—") for x in items]
+            shown, more = names[:15], len(names) - 15
+            lines.append(f"🍽 Блюда ({len(names)}):")
+            lines += [f" • {n}" for n in shown]
+            if more > 0:
+                lines.append(f" • …и ещё {more}")
+            link = "/stoplist/history"
+        lines.append(f"👤 Снял: {display_name(actor)}")
+        done_at = items[0].resolved_at
+        if done_at:
+            lines.append(f"🕑 {done_at.strftime('%d.%m.%Y %H:%M')}")
+        _send_async(stop_notify_targets(db, br_id, actor),
+                    "\n".join(lines), button_url=f"{get_app_url()}{link}",
+                    token=get_stop_bot_token())
 
 
 @app.post("/stoplist/add")
@@ -2317,17 +2338,57 @@ def stoplist_resolve(sid: int, request: Request, db: Session = Depends(get_db)):
         return RedirectResponse("/login", 302)
     e = db.get(models.StopEntry, sid)
     if e:
-        # o'z filiali (client) yoki resolve ruxsati borlar
-        ok = (user.role == Role.client and e.branch_id == user.user_branch_id) \
-            or has_perm(user, "resolve_stop")
-        if not ok:
+        if not _can_resolve_entry(user, e):
             raise HTTPException(status_code=403, detail="Нет прав убирать из стоп-листа")
         e.resolved = True
         e.resolved_at = models.tashkent_now()
         _touch_stop(e, user)
         db.commit()
-        notify_stop_resolved(db, e, user)
+        notify_stop_resolved(db, [e], user)
     return RedirectResponse("/stoplist", 302)
+
+
+def _can_resolve_entry(user, e) -> bool:
+    """Yozuvni stopdan olish huquqi.
+    MUHIM: filial (client) faqat O'Z filiali yozuvini olishi mumkin —
+    resolve_stop ruxsati unga boshqa filialga tegish huquqini bermaydi."""
+    if not has_perm(user, "resolve_stop"):
+        return False
+    if user.role == Role.client:
+        return bool(user.user_branch_id) and e.branch_id == user.user_branch_id
+    return True
+
+
+@app.post("/stoplist/resolve-bulk")
+def stoplist_resolve_bulk(request: Request, sid: List[int] = Form([]),
+                          db: Session = Depends(get_db)):
+    """Bir vaqtda bir nechta taomni stopdan olish (belgilangan qatorlar)."""
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    if not sid:
+        return RedirectResponse("/stoplist?err=" + urllib.parse.quote(
+            "Не выбрано ни одной записи"), 302)
+    entries = db.query(models.StopEntry).filter(
+        models.StopEntry.id.in_(sid),
+        models.StopEntry.resolved == False).all()
+    if not entries:
+        return RedirectResponse("/stoplist?err=" + urllib.parse.quote(
+            "Записи не найдены или уже сняты"), 302)
+    # ruxsat har bir yozuv uchun alohida tekshiriladi
+    for e in entries:
+        if not _can_resolve_entry(user, e):
+            raise HTTPException(status_code=403,
+                                detail="Нет прав убирать из стоп-листа")
+    now = models.tashkent_now()
+    for e in entries:
+        e.resolved = True
+        e.resolved_at = now
+        _touch_stop(e, user)
+    db.commit()
+    notify_stop_resolved(db, entries, user)
+    return RedirectResponse("/stoplist?ok=" + urllib.parse.quote(
+        f"Снято со стопа: {len(entries)}"), 302)
 
 
 @app.post("/stoplist/menu/add")
