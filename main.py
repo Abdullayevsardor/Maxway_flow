@@ -316,6 +316,35 @@ def branch_chat_ids(db: Session, r: models.Request, creator=None) -> List[str]:
     return ids
 
 
+def get_stop_channel() -> str:
+    """Stop-list xabarlari uchun umumiy kanal/guruh ID si (ixtiyoriy).
+    MAXWAY_STOP_CHANNEL env yoki stop_channel.txt fayldan. Bo'sh — kanal ishlatilmaydi."""
+    ch = os.environ.get("MAXWAY_STOP_CHANNEL", "").strip()
+    if not ch:
+        try:
+            with open("stop_channel.txt", encoding="utf-8") as f:
+                ch = f.read().strip()
+        except FileNotFoundError:
+            ch = ""
+    if "=" in ch:
+        ch = ch.split("=", 1)[1].strip()
+    return ch
+
+
+def _send_async(chat_ids, text: str, button_url: str = ""):
+    """Xabarlarni fon oqimida yuboradi — foydalanuvchi sahifasi kutib qolmasin."""
+    ids = [c for c in chat_ids if c]
+    if not ids:
+        return
+    import threading
+
+    def _run():
+        for cid in ids:
+            send_telegram(cid, text, button_url=button_url)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def base_requests(db: Session, user):
     """Klient → o'z filiali; bo'limga biriktirilgan admin/menejer/ijrochi → faqat o'z bo'limi;
     bo'limsiz admin (категория = —) → barcha zayavkalar (bosh admin)."""
@@ -1980,7 +2009,77 @@ def _create_stop_entries(db: Session, user, branch_id, item_ids, reason,
         created.append(e)
     if created:
         db.commit()
+        notify_stop_added(db, created, user)
     return created, errors, skipped
+
+
+def stop_notify_targets(db: Session, branch_id: int, actor=None) -> List[str]:
+    """Stop qo'shilganda kimga telegram ketishini aniqlaydi.
+
+    Barcha filiallar bo'yicha: Снабжение, Просмотр (viewer), Админ.
+    КПП — admin biriktirgan filiallar bo'yicha (biriktirilmagan bo'lsa — barchasi).
+    Faqat o'z filiali bo'yicha: filial logini (client) va filialga yozilgan
+    qo'shimcha telegram ID lar (Branch.tg_chat_ids).
+    Xabarni qo'shgan odamning o'ziga yuborilmaydi."""
+    ids, seen = [], set()
+
+    def _add(cid):
+        cid = (cid or "").strip()
+        if cid and cid not in seen:
+            seen.add(cid)
+            ids.append(cid)
+
+    users = db.query(models.User).filter(
+        models.User.is_active == True,
+        models.User.telegram_chat_id.isnot(None),
+        models.User.telegram_chat_id != "").all()
+    for u in users:
+        if actor and u.id == actor.id:
+            continue
+        if u.role == Role.client:
+            if u.user_branch_id and u.user_branch_id == branch_id:
+                _add(u.telegram_chat_id)
+        elif u.role == Role.kpp:
+            vis = {b.id for b in u.visible_branches}
+            if not vis or branch_id in vis:
+                _add(u.telegram_chat_id)
+        elif u.role in (Role.viewer, Role.admin) or is_supply(u):
+            _add(u.telegram_chat_id)
+    # filialning qo'shimcha xodimlari (login emas — faqat telegram ID)
+    b = db.get(models.Branch, branch_id) if branch_id else None
+    if b and b.tg_chat_ids:
+        for part in b.tg_chat_ids.replace(";", ",").replace("\n", ",").replace(" ", ",").split(","):
+            _add(part)
+    # umumiy kanal/guruh (sozlangan bo'lsa)
+    _add(get_stop_channel())
+    return ids
+
+
+def notify_stop_added(db: Session, created, actor):
+    """Filialdan stopga taom qo'shilganda telegram xabari (bitta umumiy xabar)."""
+    if not created:
+        return
+    first = created[0]
+    branch = first.branch or db.get(models.Branch, first.branch_id)
+    dishes = [(e.menu_item.name if e.menu_item else "—") for e in created]
+    shown = dishes[:15]
+    more = len(dishes) - len(shown)
+    lines = [f"🛑 <b>Новый стоп — MAXWAY</b>", "",
+             f"🏢 Филиал: <b>{branch.name if branch else '—'}</b>",
+             f"🏷 Причина: {REASON_LABELS.get(first.reason, first.reason)}",
+             f"🍽 Блюда ({len(dishes)}):"]
+    lines += [f" • {n}" for n in shown]
+    if more > 0:
+        lines.append(f" • …и ещё {more}")
+    if first.comment:
+        lines.append(f"💬 Комментарий филиала: {first.comment}")
+    lines.append(f"👤 Добавил: {display_name(actor)}")
+    lines.append(f"🕑 {first.created_at.strftime('%d.%m.%Y %H:%M')}"
+                 if first.created_at else "")
+    text = "\n".join(l for l in lines if l != "")
+    link = f"/stoplist/{first.id}" if len(created) == 1 else "/stoplist"
+    _send_async(stop_notify_targets(db, first.branch_id, actor),
+                text, button_url=f"{get_app_url()}{link}")
 
 
 @app.post("/stoplist/add")

@@ -431,3 +431,139 @@ def test_list_query_count_is_constant(client, seed, db):
         event.remove(engine, "before_cursor_execute", before)
     # 1 — foydalanuvchi, 1 — count, 1 — ro'yxat (branch/menu_item join bilan keladi)
     assert used <= 5, f"слишком много запросов: {used} (возможен N+1)"
+
+
+# ================= TELEGRAM XABARNOMASI =================
+@pytest.fixture
+def fresh_dish(db):
+    """Har chaqiruvda hali stopga tushmagan yangi taom qaytaradi."""
+    counter = {"n": 0}
+
+    def _make():
+        counter["n"] += 1
+        m = models.MenuItem(name=f"Тест-блюдо {counter['n']}-{id(counter)}", is_active=True)
+        db.add(m)
+        db.commit()
+        return m.id
+    return _make
+
+
+@pytest.fixture
+def tg(monkeypatch):
+    """send_telegram ni ushlaydi: (chat_id, matn) juftliklari to'planadi."""
+    import main
+    sent = []
+    monkeypatch.setattr(main, "send_telegram",
+                        lambda cid, text, **kw: sent.append((cid, text)))
+    # fon oqimi o'rniga darhol yuboramiz — test barqaror bo'lsin
+    monkeypatch.setattr(main, "_send_async",
+                        lambda ids, text, button_url="": [main.send_telegram(c, text) for c in ids])
+    return sent
+
+
+def test_stop_notification_reaches_right_people(client, seed, db, tg, monkeypatch, fresh_dish):
+    """Снабжение/просмотр/админ — barcha filiallar; filial — faqat o'zi."""
+    import main
+    b1, b2 = seed["b1"], seed["b2"]
+    # har bir rolga telegram ID beramiz
+    seed["supply"].telegram_chat_id = "SUPPLY"
+    seed["viewer"].telegram_chat_id = "VIEWER"
+    seed["admin"].telegram_chat_id = "ADMIN"
+    seed["branch"].telegram_chat_id = "BRANCH12"      # b1 filiali
+    seed["branch2"].telegram_chat_id = "BRANCH7"      # b2 filiali
+    b1.tg_chat_ids = "EMP1, EMP2"                     # b1 xodimlari
+    b2.tg_chat_ids = "EMP7"
+    db.commit()
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "CHANNEL")
+
+    # 12-filial o'z stopini qo'shadi
+    login(client, seed["branch"])
+    tg.clear()
+    r = api_create(client, fresh_dish(), reason="menu_removed",
+                   comment="Выводим из меню")
+    assert r.status_code == 201, r.text
+    got = {cid for cid, _ in tg}
+    # barcha filiallarni kuzatuvchilar
+    assert {"SUPPLY", "VIEWER", "ADMIN", "CHANNEL"} <= got
+    # o'z filiali xodimlari
+    assert {"EMP1", "EMP2"} <= got
+    # boshqa filialga tegishlilar — YO'Q
+    assert "BRANCH7" not in got and "EMP7" not in got
+    # qo'shgan odamning o'ziga ham yuborilmaydi
+    assert "BRANCH12" not in got
+
+    text = tg[0][1]
+    assert "Ресторан №12" in text
+    assert "Вывод из меню продукта" in text
+    assert "Выводим из меню" in text
+
+
+def test_kpp_gets_only_assigned_branches(client, seed, db, tg, monkeypatch, fresh_dish):
+    import main
+    from app import auth as _auth
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "")
+    kpp = models.User(full_name="kpp", email="kpp@t.uz",
+                      hashed_password=_auth.hash_password("test12345"),
+                      role=models.Role.kpp, is_active=True,
+                      telegram_chat_id="KPP")
+    kpp.visible_branches = [seed["b2"]]        # faqat 7-filial
+    db.add(kpp); db.commit()
+
+    login(client, seed["branch"])              # 12-filial qo'shadi
+    tg.clear()
+    api_create(client, fresh_dish(), reason="wrong_order")
+    assert "KPP" not in {c for c, _ in tg}, "KPP begona filial xabarini oldi"
+
+    login(client, seed["branch2"])             # 7-filial qo'shadi
+    tg.clear()
+    api_create(client, fresh_dish(), reason="wrong_order")
+    assert "KPP" in {c for c, _ in tg}
+
+
+def test_kpp_without_branches_gets_all(client, seed, db, tg, monkeypatch, fresh_dish):
+    """Filial biriktirilmagan КПП — barcha filiallarni oladi."""
+    import main
+    from app import auth as _auth
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "")
+    kpp = models.User(full_name="kpp2", email="kpp2@t.uz",
+                      hashed_password=_auth.hash_password("test12345"),
+                      role=models.Role.kpp, is_active=True, telegram_chat_id="KPPALL")
+    db.add(kpp); db.commit()
+    login(client, seed["branch"])
+    tg.clear()
+    api_create(client, fresh_dish(), reason="equipment_broken")
+    assert "KPPALL" in {c for c, _ in tg}
+
+
+def test_one_message_for_many_dishes(client, seed, db, tg, monkeypatch, fresh_dish):
+    """Bir nechta taom birga qo'shilsa — bitta umumiy xabar."""
+    import main
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "")
+    seed["supply"].telegram_chat_id = "SUPPLY"
+    db.commit()
+    login(client, seed["branch2"])
+    tg.clear()
+    ids = [fresh_dish(), fresh_dish()]
+    r = client.post("/api/product-stops", json={
+        "product_ids": ids, "reason": "supplier_no_product",
+        "branch_comment": "Поставка задерживается"})
+    assert r.status_code == 201, r.text
+    to_supply = [t for c, t in tg if c == "SUPPLY"]
+    assert len(to_supply) == 1, "har bir taom uchun alohida xabar ketmasligi kerak"
+    assert "Блюда (2)" in to_supply[0]
+
+
+def test_inactive_and_no_chat_id_are_skipped(client, seed, db, tg, monkeypatch, fresh_dish):
+    import main
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "")
+    seed["viewer"].telegram_chat_id = "VIEWER"
+    seed["viewer"].is_active = False           # o'chirilgan foydalanuvchi
+    seed["supply"].telegram_chat_id = ""       # ID kiritilmagan
+    db.commit()
+    login(client, seed["branch"])
+    tg.clear()
+    api_create(client, fresh_dish(), reason="equipment_broken")
+    got = {c for c, _ in tg}
+    assert "VIEWER" not in got and "" not in got
+    seed["viewer"].is_active = True
+    db.commit()
