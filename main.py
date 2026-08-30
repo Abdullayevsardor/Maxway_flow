@@ -274,10 +274,27 @@ def get_app_url() -> str:
     return u or "http://127.0.0.1:8000"
 
 
+def get_stop_bot_token() -> str:
+    """Stop-list xabarlari uchun ALOHIDA bot tokeni (ixtiyoriy).
+    MAXWAY_STOP_BOT_TOKEN env yoki stop_bot_token.txt fayldan.
+    Sozlanmagan bo'lsa — asosiy bot (MAXWAY_BOT_TOKEN) ishlatiladi."""
+    tok = os.environ.get("MAXWAY_STOP_BOT_TOKEN", "").strip()
+    if not tok:
+        try:
+            with open("stop_bot_token.txt", encoding="utf-8") as f:
+                tok = f.read().strip()
+        except FileNotFoundError:
+            tok = ""
+    if "=" in tok:
+        tok = tok.split("=", 1)[1].strip()
+    return tok or get_bot_token()
+
+
 def send_telegram(chat_id: str, text: str, button_url: str = "",
-                  button_text: str = "Открыть MAXWAY"):
-    """Telegramга xabar yuboradi (ixtiyoriy tugma bilan). Xatolik tinch o'tadi."""
-    token = get_bot_token()
+                  button_text: str = "Открыть MAXWAY", token: str = ""):
+    """Telegramга xabar yuboradi (ixtiyoriy tugma bilan). Xatolik tinch o'tadi.
+    `token` berilmasa — asosiy bot tokeni ishlatiladi."""
+    token = token or get_bot_token()
     if not token or not chat_id:
         return
     try:
@@ -331,7 +348,7 @@ def get_stop_channel() -> str:
     return ch
 
 
-def _send_async(chat_ids, text: str, button_url: str = ""):
+def _send_async(chat_ids, text: str, button_url: str = "", token: str = ""):
     """Xabarlarni fon oqimida yuboradi — foydalanuvchi sahifasi kutib qolmasin."""
     ids = [c for c in chat_ids if c]
     if not ids:
@@ -340,7 +357,7 @@ def _send_async(chat_ids, text: str, button_url: str = ""):
 
     def _run():
         for cid in ids:
-            send_telegram(cid, text, button_url=button_url)
+            send_telegram(cid, text, button_url=button_url, token=token)
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -2079,7 +2096,8 @@ def notify_stop_added(db: Session, created, actor):
     text = "\n".join(l for l in lines if l != "")
     link = f"/stoplist/{first.id}" if len(created) == 1 else "/stoplist"
     _send_async(stop_notify_targets(db, first.branch_id, actor),
-                text, button_url=f"{get_app_url()}{link}")
+                text, button_url=f"{get_app_url()}{link}",
+                token=get_stop_bot_token())
 
 
 def _human_duration(delta) -> str:
@@ -2116,7 +2134,8 @@ def notify_stop_resolved(db: Session, e, actor):
     if e.resolved_at:
         lines.append(f"🕑 {e.resolved_at.strftime('%d.%m.%Y %H:%M')}")
     _send_async(stop_notify_targets(db, e.branch_id, actor),
-                "\n".join(lines), button_url=f"{get_app_url()}/stoplist/{e.id}")
+                "\n".join(lines), button_url=f"{get_app_url()}/stoplist/{e.id}",
+                token=get_stop_bot_token())
 
 
 @app.post("/stoplist/add")

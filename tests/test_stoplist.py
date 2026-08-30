@@ -457,7 +457,8 @@ def tg(monkeypatch):
                         lambda cid, text, **kw: sent.append((cid, text)))
     # fon oqimi o'rniga darhol yuboramiz — test barqaror bo'lsin
     monkeypatch.setattr(main, "_send_async",
-                        lambda ids, text, button_url="": [main.send_telegram(c, text) for c in ids])
+                        lambda ids, text, button_url="", token="":
+                        [main.send_telegram(c, text) for c in ids])
     return sent
 
 
@@ -620,3 +621,32 @@ def test_duration_wording(mins, expect):
     import main
     from datetime import timedelta
     assert main._human_duration(timedelta(minutes=mins)) == expect
+
+
+def test_stop_notifications_use_separate_bot_token(monkeypatch, client, seed, db, fresh_dish):
+    """Stop xabarlari MAXWAY_STOP_BOT_TOKEN bilan ketadi, boshqalari — asosiy token bilan."""
+    import main
+    used = []
+    monkeypatch.setattr(main, "send_telegram",
+                        lambda cid, text, button_url="", button_text="", token="":
+                        used.append((cid, token)))
+    monkeypatch.setattr(main, "_send_async",
+                        lambda ids, text, button_url="", token="":
+                        [main.send_telegram(c, text, token=token) for c in ids])
+    monkeypatch.setattr(main, "get_bot_token", lambda: "MAIN-TOKEN")
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "CHANNEL")
+    monkeypatch.setenv("MAXWAY_STOP_BOT_TOKEN", "STOP-TOKEN")
+
+    login(client, seed["branch"])
+    api_create(client, fresh_dish(), reason="wrong_order")
+    assert used, "xabar yuborilmadi"
+    assert all(tok == "STOP-TOKEN" for _, tok in used), used
+
+
+def test_stop_token_falls_back_to_main(monkeypatch):
+    """Alohida token sozlanmagan bo'lsa — asosiy bot ishlatiladi."""
+    import main
+    monkeypatch.delenv("MAXWAY_STOP_BOT_TOKEN", raising=False)
+    monkeypatch.setattr(main, "get_bot_token", lambda: "MAIN-TOKEN")
+    monkeypatch.chdir(main.os.path.dirname(main.os.path.abspath(main.__file__)))
+    assert main.get_stop_bot_token() == "MAIN-TOKEN"
