@@ -650,3 +650,33 @@ def test_stop_token_falls_back_to_main(monkeypatch):
     monkeypatch.setattr(main, "get_bot_token", lambda: "MAIN-TOKEN")
     monkeypatch.chdir(main.os.path.dirname(main.os.path.abspath(main.__file__)))
     assert main.get_stop_bot_token() == "MAIN-TOKEN"
+
+
+def test_notify_preview_is_admin_only(client, seed, db):
+    """Tashxis endpointi faqat admin uchun va hech nima yubormaydi."""
+    login(client, seed["branch"])
+    assert client.get(f"/api/stop-notify-preview?branch_id={seed['b1'].id}").status_code == 403
+    login(client, seed["supply"])
+    assert client.get(f"/api/stop-notify-preview?branch_id={seed['b1'].id}").status_code == 403
+    login(client, seed["admin"])
+    assert client.get("/api/stop-notify-preview?branch_id=999999").status_code == 404
+
+
+def test_notify_preview_shows_sources(client, seed, db, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "CHANNEL")
+    seed["supply"].telegram_chat_id = "SUPPLY"
+    seed["branch"].telegram_chat_id = "BRANCH12"
+    seed["b1"].tg_chat_ids = "EMP1, EMP2"
+    db.commit()
+    login(client, seed["admin"])
+    r = client.get(f"/api/stop-notify-preview?branch_id={seed['b1'].id}&check=0")
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["branch"] == "Ресторан №12"
+    got = {x["chat_id"]: x["source"] for x in d["recipients"]}
+    assert got["SUPPLY"] == "Снабжение"
+    assert got["BRANCH12"] == "Логин филиала"
+    assert got["EMP1"] == "Сотрудник филиала"
+    assert got["EMP2"] == "Сотрудник филиала"
+    assert got["CHANNEL"] == "Канал"

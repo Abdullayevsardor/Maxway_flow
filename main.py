@@ -2048,21 +2048,21 @@ def _create_stop_entries(db: Session, user, branch_id, item_ids, reason,
     return created, errors, skipped
 
 
-def stop_notify_targets(db: Session, branch_id: int, actor=None) -> List[str]:
-    """Stop qo'shilganda kimga telegram ketishini aniqlaydi.
+def stop_notify_rows(db: Session, branch_id: int, actor=None) -> List[dict]:
+    """Stop xabarnomasi kimga ketishini MANBASI bilan qaytaradi.
 
     Barcha filiallar bo'yicha: Снабжение, Просмотр (viewer), Админ.
     КПП — admin biriktirgan filiallar bo'yicha (biriktirilmagan bo'lsa — barchasi).
     Faqat o'z filiali bo'yicha: filial logini (client) va filialga yozilgan
     qo'shimcha telegram ID lar (Branch.tg_chat_ids).
     Xabarni qo'shgan odamning o'ziga yuborilmaydi."""
-    ids, seen = [], set()
+    rows, seen = [], set()
 
-    def _add(cid):
+    def _add(cid, source, who):
         cid = (cid or "").strip()
         if cid and cid not in seen:
             seen.add(cid)
-            ids.append(cid)
+            rows.append({"chat_id": cid, "source": source, "who": who})
 
     users = db.query(models.User).filter(
         models.User.is_active == True,
@@ -2071,23 +2071,34 @@ def stop_notify_targets(db: Session, branch_id: int, actor=None) -> List[str]:
     for u in users:
         if actor and u.id == actor.id:
             continue
+        label = f"{u.full_name} ({u.email})"
         if u.role == Role.client:
             if u.user_branch_id and u.user_branch_id == branch_id:
-                _add(u.telegram_chat_id)
+                _add(u.telegram_chat_id, "Логин филиала", label)
         elif u.role == Role.kpp:
             vis = {b.id for b in u.visible_branches}
             if not vis or branch_id in vis:
-                _add(u.telegram_chat_id)
-        elif u.role in (Role.viewer, Role.admin) or is_supply(u):
-            _add(u.telegram_chat_id)
+                _add(u.telegram_chat_id, "КПП", label)
+        elif is_supply(u):
+            _add(u.telegram_chat_id, "Снабжение", label)
+        elif u.role == Role.viewer:
+            _add(u.telegram_chat_id, "Просмотр", label)
+        elif u.role == Role.admin:
+            _add(u.telegram_chat_id, "Админ", label)
     # filialning qo'shimcha xodimlari (login emas — faqat telegram ID)
     b = db.get(models.Branch, branch_id) if branch_id else None
     if b and b.tg_chat_ids:
-        for part in b.tg_chat_ids.replace(";", ",").replace("\n", ",").replace(" ", ",").split(","):
-            _add(part)
+        raw = b.tg_chat_ids.replace(";", ",").replace("\n", ",").replace(" ", ",")
+        for part in raw.split(","):
+            _add(part, "Сотрудник филиала", b.name)
     # umumiy kanal/guruh (sozlangan bo'lsa)
-    _add(get_stop_channel())
-    return ids
+    _add(get_stop_channel(), "Канал", "MAXWAY_STOP_CHANNEL")
+    return rows
+
+
+def stop_notify_targets(db: Session, branch_id: int, actor=None) -> List[str]:
+    """Faqat chat_id lar ro'yxati (yuborish uchun)."""
+    return [r["chat_id"] for r in stop_notify_rows(db, branch_id, actor)]
 
 
 def notify_stop_added(db: Session, created, actor):
@@ -2662,6 +2673,65 @@ async def api_product_stop_update(sid: int, request: Request, db: Session = Depe
 
 # PUT — PATCH bilan bir xil semantika (mavjud maydonlar yangilanadi)
 app.add_api_route("/api/product-stops/{sid}", api_product_stop_update, methods=["PUT"])
+
+
+@app.get("/api/stop-notify-preview")
+def api_stop_notify_preview(branch_id: int, request: Request, check: str = "1",
+                            db: Session = Depends(get_db)):
+    """TASHXIS (faqat admin): shu filialdan stop qo'shilsa kimga xabar ketadi.
+    Hech qanday xabar YUBORMAYDI — faqat ro'yxat va yetib borish holati."""
+    user = current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    if user.role != Role.admin:
+        raise HTTPException(status_code=403, detail="Только для администратора")
+    b = db.get(models.Branch, branch_id)
+    if not b:
+        raise HTTPException(status_code=404, detail="Филиал не найден")
+    rows = stop_notify_rows(db, branch_id)
+    token = get_stop_bot_token()
+    bot = "—"
+    if token:
+        me = _tg_api(token, "getMe")
+        bot = "@" + me["result"]["username"] if me.get("ok") else \
+              f"ТОКЕН НЕ РАБОТАЕТ: {me.get('description')}"
+    if check == "1" and token:
+        for r in rows:
+            res = _tg_api(token, "getChat", chat_id=r["chat_id"])
+            if res.get("ok"):
+                c = res["result"]
+                r["reachable"] = True
+                r["telegram"] = c.get("title") or c.get("username") or \
+                    " ".join(x for x in (c.get("first_name"), c.get("last_name")) if x)
+            else:
+                r["reachable"] = False
+                r["error"] = res.get("description")
+    return JSONResponse({
+        "branch": b.name,
+        "branch_id": b.id,
+        "bot": bot,
+        "channel": get_stop_channel() or None,
+        "separate_stop_bot": bool(os.environ.get("MAXWAY_STOP_BOT_TOKEN", "").strip()
+                                  or os.path.exists("stop_bot_token.txt")),
+        "app_url": get_app_url(),
+        "recipients": rows,
+    })
+
+
+def _tg_api(token: str, method: str, **params):
+    """Telegram API ga so'rov (faqat tashxis uchun — xabar yubormaydi)."""
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    data = urllib.parse.urlencode(params).encode() if params else None
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=10) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read().decode())
+        except Exception:
+            return {"ok": False, "description": f"HTTP {e.code}"}
+    except Exception as e:
+        return {"ok": False, "description": str(e)}
 
 
 @app.get("/api/stop-reasons")
