@@ -7,7 +7,7 @@
   <div><h1>Причины стопов по продуктам по филиалам</h1>
     <p>{% if is_client %}Отметьте блюда, которых нет в наличии{% else %}Блюда на стопе по филиалам{% endif %}</p></div>
   <div class="head-actions">
-    {% if can_add %}<a href="/stoplist/new" class="btn btn-blue">Добавить</a>{% endif %}
+    {% if can_add %}<a href="/stoplist/new" class="btn btn-blue">＋ Добавить</a>{% endif %}
     {% if can_export %}
     <a href="/stoplist/export?mode=active{% if qs %}&{{ qs }}{% endif %}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"
        class="btn btn-light">Экспорт в Excel</a>

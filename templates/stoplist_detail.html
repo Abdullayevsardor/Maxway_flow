@@ -8,7 +8,7 @@
 <div class="page-head">
   <div>
     <h1>Информация о стопе</h1>
-    <p><a href="{{ '/stoplist/history' if e.resolved else '/stoplist' }}" class="link-blue">{{ 'К истории' if e.resolved else 'К стоп-листу' }}</a></p>
+    <p><a href="{{ '/stoplist/history' if e.resolved else '/stoplist' }}" class="link-blue">← {{ 'К истории' if e.resolved else 'К стоп-листу' }}</a></p>
   </div>
   <div class="head-actions">
     {% if can_edit_any %}<button class="btn btn-blue" onclick="openEdit()">Изменить</button>{% endif %}
