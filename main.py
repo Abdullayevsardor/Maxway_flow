@@ -2082,6 +2082,43 @@ def notify_stop_added(db: Session, created, actor):
                 text, button_url=f"{get_app_url()}{link}")
 
 
+def _human_duration(delta) -> str:
+    """Muddatni ruscha qisqa yozadi: «2 д 5 ч», «3 ч 40 мин», «12 мин»."""
+    mins = int(delta.total_seconds() // 60)
+    if mins < 1:
+        return "меньше минуты"
+    d, rem = divmod(mins, 1440)
+    h, m = divmod(rem, 60)
+    parts = []
+    if d:
+        parts.append(f"{d} д")
+    if h:
+        parts.append(f"{h} ч")
+    if m and not d:            # kunlar bo'lsa daqiqa ortiqcha
+        parts.append(f"{m} мин")
+    return " ".join(parts) or f"{mins} мин"
+
+
+def notify_stop_resolved(db: Session, e, actor):
+    """Taom stopdan olinganda telegram xabari — qo'shilgandagi bilan bir xil manzillarga."""
+    if not e:
+        return
+    branch = e.branch or db.get(models.Branch, e.branch_id)
+    lines = ["✅ <b>Снят со стопа — MAXWAY</b>", "",
+             f"🏢 Филиал: <b>{branch.name if branch else '—'}</b>",
+             f"🍽 Блюдо: <b>{e.menu_item.name if e.menu_item else '—'}</b>",
+             f"🏷 Причина была: {REASON_LABELS.get(e.reason, e.reason)}"]
+    if e.created_at and e.resolved_at:
+        lines.append(f"⏱ На стопе был: {_human_duration(e.resolved_at - e.created_at)}")
+    if e.supply_comment:
+        lines.append(f"💬 Комментарий снабжения: {e.supply_comment}")
+    lines.append(f"👤 Снял: {display_name(actor)}")
+    if e.resolved_at:
+        lines.append(f"🕑 {e.resolved_at.strftime('%d.%m.%Y %H:%M')}")
+    _send_async(stop_notify_targets(db, e.branch_id, actor),
+                "\n".join(lines), button_url=f"{get_app_url()}/stoplist/{e.id}")
+
+
 @app.post("/stoplist/add")
 def stoplist_add(request: Request, menu_item_id: List[int] = Form([]),
                  menu_name: List[str] = Form([]), branch_id: str = Form(""),
@@ -2241,6 +2278,7 @@ def stoplist_resolve(sid: int, request: Request, db: Session = Depends(get_db)):
         e.resolved_at = models.tashkent_now()
         _touch_stop(e, user)
         db.commit()
+        notify_stop_resolved(db, e, user)
     return RedirectResponse("/stoplist", 302)
 
 

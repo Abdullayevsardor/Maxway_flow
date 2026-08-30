@@ -567,3 +567,56 @@ def test_inactive_and_no_chat_id_are_skipped(client, seed, db, tg, monkeypatch, 
     assert "VIEWER" not in got and "" not in got
     seed["viewer"].is_active = True
     db.commit()
+
+
+def test_notification_on_resolve(client, seed, db, tg, monkeypatch, fresh_dish):
+    """Stopdan olinganda ham xabar ketadi — qo'shilgandagi manzillarga."""
+    import main
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "CHANNEL")
+    seed["supply"].telegram_chat_id = "SUPPLY"
+    seed["viewer"].telegram_chat_id = "VIEWER"
+    seed["branch2"].telegram_chat_id = "BRANCH7"
+    db.commit()
+
+    login(client, seed["branch"])
+    r = api_create(client, fresh_dish(), reason="equipment_broken")
+    sid = r.json()["created"][0]["id"]
+
+    tg.clear()
+    assert client.post(f"/stoplist/{sid}/resolve",
+                       follow_redirects=False).status_code == 302
+    got = {c for c, _ in tg}
+    assert {"SUPPLY", "VIEWER", "CHANNEL"} <= got
+    assert "BRANCH7" not in got          # boshqa filialga tegishli emas
+
+    text = [t for c, t in tg if c == "SUPPLY"][0]
+    assert "Снят со стопа" in text
+    assert "Ресторан №12" in text
+    assert "Сломалось оборудование" in text
+    assert "На стопе был" in text
+
+
+def test_no_notification_when_resolve_forbidden(client, seed, db, tg, monkeypatch, fresh_dish):
+    """Ruxsatsiz urinishda 403 va hech qanday xabar ketmaydi."""
+    import main
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "CHANNEL")
+    login(client, seed["admin"])
+    r = api_create(client, fresh_dish(), branch_id=seed["b2"].id, reason="wrong_order")
+    sid = r.json()["created"][0]["id"]
+
+    login(client, seed["viewer"])         # viewer stopdan ololmaydi
+    tg.clear()
+    assert client.post(f"/stoplist/{sid}/resolve").status_code == 403
+    assert tg == []
+
+
+@pytest.mark.parametrize("mins, expect", [
+    (0, "меньше минуты"),
+    (12, "12 мин"),
+    (220, "3 ч 40 мин"),
+    (60 * 24 * 2 + 60 * 5, "2 д 5 ч"),
+])
+def test_duration_wording(mins, expect):
+    import main
+    from datetime import timedelta
+    assert main._human_duration(timedelta(minutes=mins)) == expect
