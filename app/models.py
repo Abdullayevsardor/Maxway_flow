@@ -197,6 +197,8 @@ class Branch(Base):
     location = Column(Text, default="")              # to'liq manzil / lokatsiya
     phone = Column(String(40), default="")           # filial telefon raqami
     director_name = Column(String(120), default="")  # filial direktori (buyurtmachi)
+    # filial xodimlarining telegram chat_id lari (vergul bilan) — izoh/yechim xabari uchun
+    tg_chat_ids = Column(Text, default="")
     created_at = Column(DateTime, default=tashkent_now)
 
 
@@ -238,16 +240,26 @@ class StopEntry(Base):
     """Filial stop-listi: qaysi taom, qaysi filialda to'xtatilgan va sababi."""
     __tablename__ = "stop_entries"
     id = Column(Integer, primary_key=True, index=True)
-    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="CASCADE"), nullable=False)
-    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False)
-    reason = Column(String(40), nullable=False)       # sabab kaliti
+    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    reason = Column(String(40), nullable=False, index=True)   # sabab kaliti
     comment = Column(Text, default="")               # filial izohi
     supply_comment = Column(Text, default="")         # Снабжение izohi
+    # Снабжение stop sababini tasdiqladimi (ДА / НЕТ)
+    supply_confirmed = Column(Boolean, default=False, nullable=False, index=True)
+    confirmed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    confirmed_at = Column(DateTime, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=tashkent_now)
-    resolved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=tashkent_now, index=True)
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    updated_at = Column(DateTime, nullable=True)
+    resolved = Column(Boolean, default=False, index=True)
     resolved_at = Column(DateTime, nullable=True)   # stopdan olingan vaqti (tarix)
 
     branch = relationship("Branch")
     menu_item = relationship("MenuItem")
     creator = relationship("User", foreign_keys=[created_by])
+    updater = relationship("User", foreign_keys=[updated_by])
+    confirmer = relationship("User", foreign_keys=[confirmed_by])

@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+{% import "_stop_parts.html" as sp %}
+{% block title %}Добавить в стоп-лист{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Добавить в стоп-лист</h1>
+    <p><a href="/stoplist" class="link-blue">Вернуться к стоп-листу</a></p>
+  </div>
+</div>
+
+{{ sp.flash('', err_msg) }}
+
+{% if not menu_items %}
+<div class="panel"><div class="panel-body">
+  <div class="stop-empty">
+    <b>Меню пока пусто</b>
+    <span>Обратитесь к менеджеру снабжения, чтобы загрузить меню</span>
+  </div>
+</div></div>
+{% else %}
+
+<form method="post" action="/stoplist/add" id="stopForm" class="new-grid">
+
+  {# ================= ЛЕВО: выбор блюд ================= #}
+  <div class="panel np-main">
+    <div class="panel-head">
+      <div class="title">Выберите блюда</div>
+      <span class="badge" id="cntBadge">0</span>
+    </div>
+    <div class="panel-body">
+
+      <div class="np-search">
+        <input type="text" id="dishSearch" placeholder="Поиск блюда…" autocomplete="off"
+               oninput="filterDishes()">
+        <button type="button" class="np-clear" id="btnClearSearch" onclick="clearSearch()" title="Очистить">Очистить</button>
+      </div>
+
+      <div class="np-tools">
+        <span id="foundInfo">{{ menu_items|length }} блюд</span>
+        <div>
+          <button type="button" class="np-link" onclick="selectVisible()">Выбрать все</button>
+          <button type="button" class="np-link" onclick="clearSel()">Снять выбор</button>
+        </div>
+      </div>
+
+      <div class="dish-grid" id="dishGrid">
+        {% for m in menu_items %}
+        {% set busy = m.id in on_stop %}
+        <label class="dish-card{{ ' busy' if busy }}" data-name="{{ m.name|lower }}"
+               {% if busy %}title="Уже в стоп-листе"{% endif %}>
+          <input type="checkbox" name="menu_item_id" value="{{ m.id }}"
+                 data-name="{{ m.name }}" {{ 'disabled' if busy }} onchange="syncSel()">
+          <span class="dish-tick" aria-hidden="true"></span>
+          <span class="dish-name">{{ m.name }}</span>
+          {% if busy %}<span class="dish-busy">на стопе</span>{% endif %}
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="np-none" id="noneFound">Ничего не найдено</div>
+    </div>
+  </div>
+
+  {# ================= ПРАВО: параметры + сохранение ================= #}
+  <div class="np-side">
+    <div class="panel">
+      <div class="panel-head"><div class="title">Параметры стопа</div></div>
+      <div class="panel-body">
+
+        <div class="field">
+          <label>Филиал <span class="req">*</span></label>
+          {% if is_client %}
+          <div class="np-fixed">{{ my_branch.name if my_branch else '—' }}</div>
+          {% else %}
+          <select name="branch_id" class="inp" id="branchSel" required>
+            <option value="">— выберите филиал —</option>
+            {% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+          </select>
+          <div class="fld-err" id="branchErr">Выберите филиал</div>
+          {% endif %}
+        </div>
+
+        <div class="field">
+          <label>Причина <span class="req">*</span>
+            <span class="hint">— для всех выбранных блюд</span></label>
+          <div class="reason-list">
+            {% for rk, rl in REASON_LABELS.items() %}
+            <label class="reason-opt">
+              <input type="radio" name="reason" value="{{ rk }}" onchange="syncSel()">
+              <span class="reason-dot" aria-hidden="true"></span>
+              <span>{{ rl }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <div class="fld-err" id="reasonErr">Выберите причину</div>
+        </div>
+
+        <div class="field" style="margin-bottom:0">
+          <label>Комментарий филиала <span class="hint">— необязательно</span></label>
+          <textarea name="comment" id="cmt" class="inp np-area" maxlength="1000"
+                    placeholder="Например: поставка задерживается до 16:00"
+                    oninput="countCmt()"></textarea>
+          <div class="np-count"><span id="cmtCount">0</span> / 1000</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel np-summary">
+      <div class="panel-body">
+        <div class="np-chips-head">
+          Выбрано: <b id="cntText">0</b>
+          <button type="button" class="np-link" id="clearAll" onclick="clearSel()" hidden>очистить</button>
+        </div>
+        <div class="np-chips" id="chips"><span class="np-empty-chip">Блюда ещё не выбраны</span></div>
+        <div class="np-actions">
+          <a href="/stoplist" class="btn btn-light">Отмена</a>
+          <button type="submit" class="btn btn-blue" id="saveBtn" disabled>Добавить в стоп-лист</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+
+<style>
+  .new-grid{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:20px;align-items:start}
+  .np-side{position:sticky;top:84px;display:flex;flex-direction:column;gap:20px}
+  .req{color:#dc2626}
+  .hint{color:#94a3b8;font-weight:400}
+
+  /* Поиск */
+  .np-search{position:relative;display:flex;align-items:center}
+  .np-search svg{position:absolute;left:14px;width:18px;height:18px;color:#94a3b8;pointer-events:none}
+  .np-search input{width:100%;padding:13px 92px 13px 14px;border:1px solid var(--border);
+    border-radius:12px;font-size:15px;font-family:inherit;background:#f8fafc;transition:.15s}
+  .np-search input:focus{outline:none;border-color:var(--blue);background:#fff;
+    box-shadow:0 0 0 4px rgba(37,99,235,.1)}
+  .np-clear{position:absolute;right:7px;padding:5px 10px;border-radius:8px;background:#f1f5f9;
+    color:var(--muted);display:none;font-size:12.5px;font-weight:600}
+  .np-clear.on{display:block}
+  .np-clear:hover{background:#f1f5f9;color:#334155}
+
+  .np-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    margin:14px 2px 12px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+  .np-link{background:none;color:var(--blue);font-weight:600;font-size:13px;padding:4px 6px;border-radius:6px}
+  .np-link:hover{background:var(--blue-light)}
+
+  /* Сетка блюд */
+  .dish-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:10px}
+  .dish-card{position:relative;display:flex;align-items:center;gap:11px;padding:13px 14px;
+    border:1px solid var(--border);border-radius:12px;background:#fff;cursor:pointer;
+    transition:border-color .12s,background .12s,box-shadow .12s;user-select:none}
+  .dish-card input{position:absolute;opacity:0;pointer-events:none}
+  .dish-card:hover{border-color:#93c5fd;background:#f8fafc}
+  .dish-tick{width:21px;height:21px;border-radius:7px;border:2px solid #cbd5e1;flex-shrink:0;
+    display:grid;place-items:center;transition:.12s}
+  .dish-tick::after{content:'';width:9px;height:5px;border-left:2px solid #fff;border-bottom:2px solid #fff;
+    transform:rotate(-45deg) scale(.4);opacity:0;transition:.12s;margin-top:-2px}
+  .dish-name{font-size:14.5px;font-weight:600;color:#1e293b;line-height:1.25}
+  .dish-card:has(input:checked){border-color:var(--blue);background:var(--blue-light);
+    box-shadow:0 2px 8px rgba(37,99,235,.12)}
+  .dish-card:has(input:checked) .dish-tick{background:var(--blue);border-color:var(--blue)}
+  .dish-card:has(input:checked) .dish-tick::after{opacity:1;transform:rotate(-45deg) scale(1)}
+  .dish-card:has(input:focus-visible){outline:2px solid var(--blue);outline-offset:2px}
+  .dish-card.busy{opacity:.55;cursor:not-allowed;background:#f8fafc}
+  .dish-card.busy:hover{border-color:var(--border)}
+  .dish-busy{margin-left:auto;font-size:11px;font-weight:700;color:#b45309;
+    background:var(--yellow-bg);border:1px solid var(--yellow-border);padding:2px 7px;border-radius:99px}
+  .np-none{display:none;text-align:center;color:#94a3b8;padding:34px 10px}
+  .np-none.on{display:block}
+
+  /* Причины — список выбора */
+  .reason-list{display:flex;flex-direction:column;gap:6px}
+  .field .reason-list .reason-opt{display:flex;align-items:center;gap:10px;padding:10px 12px;
+    border:1px solid var(--border);border-radius:10px;cursor:pointer;font-size:14px;
+    color:#334155;font-weight:500;margin-bottom:0;transition:.12s;user-select:none}
+  .field .reason-list .reason-opt input{position:absolute;opacity:0;pointer-events:none}
+  .field .reason-list .reason-opt:hover{border-color:#93c5fd;background:#f8fafc}
+  .reason-dot{width:18px;height:18px;border-radius:50%;border:2px solid #cbd5e1;flex-shrink:0;
+    display:grid;place-items:center;transition:.12s}
+  .reason-dot::after{content:'';width:8px;height:8px;border-radius:50%;background:#fff;
+    transform:scale(0);transition:.12s}
+  .field .reason-list .reason-opt:has(input:checked){border-color:var(--blue);
+    background:var(--blue-light);color:var(--blue);font-weight:700}
+  .field .reason-list .reason-opt:has(input:checked) .reason-dot{border-color:var(--blue);background:var(--blue)}
+  .field .reason-list .reason-opt:has(input:checked) .reason-dot::after{transform:scale(1)}
+  .field .reason-list .reason-opt:has(input:focus-visible){outline:2px solid var(--blue);outline-offset:2px}
+
+  .np-fixed{padding:12px 14px;border-radius:10px;background:#f1f5f9;border:1px solid var(--border);
+    font-weight:700;color:#334155;font-size:14.5px}
+  .np-area{width:100%;min-height:86px;padding:11px 13px;resize:vertical;font-family:inherit}
+  .np-count{text-align:right;font-size:12px;color:#94a3b8;margin-top:5px}
+
+  /* Итог */
+  .np-summary .panel-body{padding:18px}
+  .np-chips-head{display:flex;justify-content:space-between;align-items:center;
+    font-size:13.5px;color:var(--muted);margin-bottom:10px}
+  .np-chips-head b{color:var(--text);font-size:15px}
+  .np-chips{display:flex;flex-wrap:wrap;gap:6px;max-height:150px;overflow-y:auto;margin-bottom:16px}
+  .np-empty-chip{color:#cbd5e1;font-size:13px}
+  .sel-chip{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:99px;
+    background:var(--blue);color:#fff;font-size:12.5px;font-weight:600}
+  .sel-chip b{cursor:pointer;font-size:15px;line-height:1;opacity:.8}
+  .sel-chip b:hover{opacity:1}
+  .np-actions{display:flex;gap:10px}
+  .np-actions .btn{flex:1;justify-content:center}
+  .np-actions .btn:disabled{opacity:.5;cursor:not-allowed}
+  .fld-err{display:none;color:#dc2626;font-size:12.5px;margin-top:6px;font-weight:500}
+  .fld-err.on{display:block}
+
+  @media(max-width:1100px){
+    .new-grid{grid-template-columns:1fr}
+    .np-side{position:static}
+  }
+  @media(max-width:560px){
+    .dish-grid{grid-template-columns:1fr 1fr;gap:8px}
+    .dish-card{padding:11px}
+    .dish-name{font-size:13.5px}
+    .np-actions{flex-direction:column-reverse}
+  }
+  @media(max-width:380px){ .dish-grid{grid-template-columns:1fr} }
+</style>
+
+<script>
+  var grid = document.getElementById('dishGrid');
+  var boxes = function(){ return grid.querySelectorAll('input[type=checkbox]'); };
+
+  function filterDishes(){
+    var q = document.getElementById('dishSearch').value.trim().toLowerCase();
+    var shown = 0;
+    grid.querySelectorAll('.dish-card').forEach(function(el){
+      var hit = !q || el.dataset.name.indexOf(q) >= 0;
+      el.style.display = hit ? '' : 'none';
+      if (hit) shown++;
+    });
+    document.getElementById('foundInfo').textContent = shown + ' блюд';
+    document.getElementById('noneFound').classList.toggle('on', shown === 0);
+    document.getElementById('btnClearSearch').classList.toggle('on', !!q);
+  }
+  function clearSearch(){
+    document.getElementById('dishSearch').value = '';
+    filterDishes();
+    document.getElementById('dishSearch').focus();
+  }
+  function selectVisible(){
+    grid.querySelectorAll('.dish-card').forEach(function(el){
+      if (el.style.display === 'none' || el.classList.contains('busy')) return;
+      el.querySelector('input').checked = true;
+    });
+    syncSel();
+  }
+  function clearSel(){
+    boxes().forEach(function(b){ b.checked = false; });
+    syncSel();
+  }
+  function syncSel(){
+    var picked = [].filter.call(boxes(), function(b){ return b.checked; });
+    var chips = document.getElementById('chips');
+    chips.textContent = '';
+    if (!picked.length){
+      var s = document.createElement('span');
+      s.className = 'np-empty-chip';
+      s.textContent = 'Блюда ещё не выбраны';
+      chips.appendChild(s);
+    } else {
+      picked.forEach(function(b){
+        var c = document.createElement('span');
+        c.className = 'sel-chip';
+        c.appendChild(document.createTextNode(b.dataset.name));
+        var x = document.createElement('b');
+        x.textContent = '×';
+        x.title = 'Убрать';
+        x.onclick = function(){ b.checked = false; syncSel(); };
+        c.appendChild(x);
+        chips.appendChild(c);
+      });
+    }
+    document.getElementById('cntBadge').textContent = picked.length;
+    document.getElementById('cntText').textContent = picked.length;
+    document.getElementById('clearAll').hidden = !picked.length;
+    var reason = document.querySelector('input[name=reason]:checked');
+    var branchSel = document.getElementById('branchSel');
+    var branchOk = !branchSel || !!branchSel.value;
+    document.getElementById('saveBtn').disabled = !(picked.length && reason && branchOk);
+    if (reason) document.getElementById('reasonErr').classList.remove('on');
+    if (branchOk && branchSel) document.getElementById('branchErr').classList.remove('on');
+  }
+  function countCmt(){
+    document.getElementById('cmtCount').textContent = document.getElementById('cmt').value.length;
+  }
+
+  var branchSel = document.getElementById('branchSel');
+  if (branchSel) branchSel.addEventListener('change', syncSel);
+
+  document.getElementById('stopForm').addEventListener('submit', function(ev){
+    var picked = [].filter.call(boxes(), function(b){ return b.checked; });
+    var reason = document.querySelector('input[name=reason]:checked');
+    var okBranch = !branchSel || !!branchSel.value;
+    document.getElementById('reasonErr').classList.toggle('on', !reason);
+    if (branchSel) document.getElementById('branchErr').classList.toggle('on', !okBranch);
+    if (!picked.length || !reason || !okBranch){
+      ev.preventDefault();
+      return;
+    }
+    var b = document.getElementById('saveBtn');
+    b.disabled = true;
+    b.textContent = 'Сохранение…';
+  });
+
+  syncSel();
+  document.getElementById('dishSearch').focus();
+</script>
+{% endif %}
+
+{% endblock %}

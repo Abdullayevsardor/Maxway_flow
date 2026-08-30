@@ -1,56 +1,81 @@
 {% extends "base.html" %}
+{% import "_stop_parts.html" as sp %}
 {% block title %}История стоп-листа{% endblock %}
 {% block content %}
 
-{% macro hist_table(rows, can_comment) %}
-<table>
-  <thead><tr><th>БЛЮДО</th><th>ПРИЧИНА</th><th>КОММ. ФИЛИАЛА</th><th>КОММ. СНАБЖЕНИЯ</th><th>ДОБАВЛЕНО</th><th>УБРАНО</th></tr></thead>
-  <tbody>
-    {% for e in rows %}
-    <tr>
-      <td data-label="Блюдо"><b>{{ e.menu_item.name if e.menu_item else "—" }}</b></td>
-      <td data-label="Причина"><span class="tag" style="background:#f1f5f9;color:#64748b">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
-      <td data-label="Комм. филиала">{{ e.comment or "—" }}</td>
-      <td data-label="Комм. снабжения">
-        {% if can_comment %}
-        <form method="post" action="/stoplist/{{ e.id }}/comment" autocomplete="off" style="display:flex;gap:6px;margin:0;min-width:200px">
-          <input type="text" name="comment" value="{{ e.supply_comment or '' }}" autocomplete="off" class="inp" style="padding:6px 8px;font-size:13px" placeholder="Комментарий...">
-          <button type="submit" class="btn btn-light" style="padding:6px 10px" title="Сохранить">✓</button>
-        </form>
-        {% else %}{{ e.supply_comment or "—" }}{% endif %}
-      </td>
-      <td data-label="Добавлено" style="color:#94a3b8;font-size:13px">{{ e.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
-      <td data-label="Убрано" style="color:#94a3b8;font-size:13px">{{ e.resolved_at.strftime('%d.%m.%Y %H:%M') if e.resolved_at else "—" }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endmacro %}
-
 <div class="page-head">
-  <div><h1>📜 История стоп-листа</h1>
+  <div><h1>История стоп-листа</h1>
     <p>Блюда, которые уже убрали со стопа</p></div>
   <div class="head-actions">
-    {% if history %}<a href="/stoplist/export?mode=history" class="btn btn-light">⬇ Скачать Excel</a>{% endif %}
-  </div>
-</div>
-
-<div class="panel">
-  <div class="panel-head"><div class="title">История <span class="badge">{{ history|length }}</span></div></div>
-  <div class="panel-body">
-    {% if not history %}
-    <p style="color:#94a3b8;margin:0">История пуста</p>
-    {% elif is_client %}
-    {{ hist_table(history, can_comment) }}
-    {% else %}
-    {% for branch_name, items in history|groupby('branch.name') %}
-    <div style="margin-bottom:22px">
-      <div style="font-weight:700;color:#1e293b;font-size:15px;margin-bottom:8px">🏪 {{ branch_name or '—' }} <span class="badge">{{ items|length }}</span></div>
-      {{ hist_table(items, can_comment) }}
-    </div>
-    {% endfor %}
+    {% if can_export %}
+    <a href="/stoplist/export?mode=history{% if qs %}&{{ qs }}{% endif %}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"
+       class="btn btn-light">Экспорт в Excel</a>
     {% endif %}
   </div>
 </div>
+
+{{ sp.flash(ok_msg, err_msg) }}
+{{ sp.filter_bar('/stoplist/history', f, branches, dishes, is_client, pg) }}
+
+<div class="panel">
+  <div class="panel-head"><div class="title">История <span class="badge">{{ pg.total }}</span></div></div>
+  <div class="panel-body">
+    {% if not history %}
+    <div class="stop-empty">
+      <b>Записей не найдено</b>
+      <span>{% if has_filters %}Попробуйте изменить или сбросить фильтры{% else %}История пуста{% endif %}</span>
+    </div>
+    {% else %}
+    <div class="tbl-wrap">
+    <table class="stop-tbl">
+      <thead><tr>
+        {{ sp.sort_th('Добавлено', 'created_at', '/stoplist/history', qs, sort_by, sort_order, '130px') }}
+        {% if not is_client %}{{ sp.sort_th('Филиал', 'branch', '/stoplist/history', qs, sort_by, sort_order) }}{% endif %}
+        {{ sp.sort_th('Блюдо', 'dish', '/stoplist/history', qs, sort_by, sort_order) }}
+        {{ sp.sort_th('Причина', 'reason', '/stoplist/history', qs, sort_by, sort_order) }}
+        {{ sp.sort_th('Подтверждение', 'supply_confirmed', '/stoplist/history', qs, sort_by, sort_order, '150px') }}
+        {{ sp.sort_th('Комм. снабжения', 'supply_comment', '/stoplist/history', qs, sort_by, sort_order) }}
+        {{ sp.sort_th('Убрано', 'resolved_at', '/stoplist/history', qs, sort_by, sort_order, '130px') }}
+      </tr></thead>
+      <tbody>
+        {% for e in history %}
+        {# butun qator bosiladigan — yozuv sahifasiga o'tadi #}
+        <tr class="done row-link" data-href="/stoplist/{{ e.id }}" tabindex="0">
+          <td data-label="Добавлено" class="when-cell">
+            <div class="d">{{ e.created_at.strftime('%d.%m.%Y') }}</div>
+            <div class="t">{{ e.created_at.strftime('%H:%M') }}</div>
+          </td>
+          {% if not is_client %}<td data-label="Филиал" class="branch-cell">{{ e.branch.name if e.branch else "—" }}</td>{% endif %}
+          <td data-label="Блюдо" class="dish-cell">
+            <a href="/stoplist/{{ e.id }}" class="row-title">{{ e.menu_item.name if e.menu_item else "—" }}</a>
+          </td>
+          <td data-label="Причина"><span class="reason-tag">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
+          {{ sp.confirm_cell(e, can_confirm) }}
+          <td data-label="Комм. снабжения" class="cmt-cell">
+            {% if can_comment %}
+            <form method="post" action="/stoplist/{{ e.id }}/comment" autocomplete="off" style="display:flex;gap:6px;margin:0;min-width:190px">
+              <input type="text" name="comment" value="{{ e.supply_comment or '' }}" maxlength="1000"
+                     class="inp" style="padding:6px 8px;font-size:13px" placeholder="Комментарий...">
+              <button type="submit" class="btn btn-light" style="padding:6px 10px" title="Сохранить">OK</button>
+            </form>
+            {% else %}{{ e.supply_comment or "—" }}{% endif %}
+          </td>
+          <td data-label="Убрано" class="when-cell">
+            {% if e.resolved_at %}
+            <div class="d">{{ e.resolved_at.strftime('%d.%m.%Y') }}</div>
+            <div class="t">{{ e.resolved_at.strftime('%H:%M') }}</div>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {{ sp.pager('/stoplist/history', qs, pg, sort_by, sort_order) }}
+    {% endif %}
+  </div>
+</div>
+
+{{ sp.row_link_script() }}
 
 {% endblock %}

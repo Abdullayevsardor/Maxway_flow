@@ -1,0 +1,141 @@
+{# ===== Stop-list uchun umumiy qismlar: filtr paneli, saralanadigan sarlavha, pagination.
+   /stoplist va /stoplist/history ikkalasi ham shu makrolardan foydalanadi. ===== #}
+
+{# Joriy filtrlarni saqlab qoluvchi havola boshlanmasi #}
+{% macro link_base(base, qs) %}{{ base }}?{% if qs %}{{ qs }}&{% endif %}{% endmacro %}
+
+{# Saralanadigan ustun sarlavhasi #}
+{% macro sort_th(label, key, base, qs, sort_by, sort_order, width='') %}
+  {% set cur = (sort_by == key) %}
+  {% set nxt = ('asc' if sort_order == 'desc' else 'desc') if cur else 'asc' %}
+  <th {% if width %}style="width:{{ width }}"{% endif %}>
+    <a class="sort-link{{ ' on' if cur }}"
+       href="{{ link_base(base, qs) }}sort_by={{ key }}&sort_order={{ nxt }}">
+      {{ label }}<span class="sort-ar">{% if cur %}{{ '▲' if sort_order == 'asc' else '▼' }}{% else %}⇅{% endif %}</span>
+    </a>
+  </th>
+{% endmacro %}
+
+{# Filtr paneli. Har qanday o'zgarish page=1 ga qaytaradi (hidden page=1). #}
+{% macro filter_bar(base, f, branches, dishes, is_client, pg) %}
+<div class="panel stop-filter">
+  <form method="get" action="{{ base }}">
+    <input type="hidden" name="page" value="1">
+    {% if not is_client %}
+    <select name="branch_id" class="inp" onchange="this.form.submit()">
+      <option value="">Все филиалы</option>
+      {% for b in branches %}<option value="{{ b.id }}" {{ 'selected' if f.branch_id == b.id }}>{{ b.name }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <select name="menu_item_id" class="inp" onchange="this.form.submit()">
+      <option value="">Все блюда</option>
+      {% for m in dishes %}<option value="{{ m.id }}" {{ 'selected' if f.menu_item_id == m.id }}>{{ m.name }}</option>{% endfor %}
+    </select>
+    <select name="reason" class="inp" onchange="this.form.submit()">
+      <option value="">Все причины</option>
+      {% for rk, rl in REASON_LABELS.items() %}<option value="{{ rk }}" {{ 'selected' if f.reason == rk }}>{{ rl }}</option>{% endfor %}
+    </select>
+    <select name="confirmed" class="inp" onchange="this.form.submit()">
+      <option value="">Подтв.: все</option>
+      <option value="yes" {{ 'selected' if f.confirmed == 'yes' }}>Подтв.: ДА</option>
+      <option value="no" {{ 'selected' if f.confirmed == 'no' }}>Подтв.: НЕТ</option>
+    </select>
+    <input type="date" name="date_from" value="{{ f.date_from }}" class="inp date-inp"
+           title="Дата: с" aria-label="Дата: с"
+           onchange="this.form.month.value='';this.form.submit()">
+    <span class="fl-lbl">—</span>
+    <input type="date" name="date_to" value="{{ f.date_to }}" class="inp date-inp"
+           title="Дата: по" aria-label="Дата: по"
+           onchange="this.form.month.value='';this.form.submit()">
+    <input type="hidden" name="month" value="{{ f.month }}">
+    <select name="page_size" class="inp" title="Записей на странице"
+            aria-label="Записей на странице" onchange="this.form.submit()">
+      {% for s in STOP_PAGE_SIZES %}<option value="{{ s }}" {{ 'selected' if pg.page_size == s }}>{{ s }}</option>{% endfor %}
+    </select>
+    <a href="{{ base }}" class="btn btn-light">Сброс</a>
+  </form>
+</div>
+{% endmacro %}
+
+{# Pagination: « 1 2 3 … N » #}
+{% macro pager(base, qs, pg, sort_by, sort_order) %}
+{% if pg.pages > 1 %}
+{# `pre` Markup bilan birlashadi — shu sababli bu yerda oddiy `&` ishlatiladi,
+   aks holda `&amp;` ikki marta escape bo'lib havola buziladi #}
+{% set pre = link_base(base, qs) ~ 'sort_by=' ~ sort_by ~ '&sort_order=' ~ sort_order ~ '&page=' %}
+<div class="pager">
+  <div class="pager-info">Всего: <b>{{ pg.total }}</b> · стр. {{ pg.page }} из {{ pg.pages }}</div>
+  <div class="pager-btns">
+    {% if pg.page > 1 %}<a href="{{ pre }}{{ pg.page - 1 }}" class="pg">«</a>
+    {% else %}<span class="pg off">«</span>{% endif %}
+
+    {% set win = [] %}
+    {% for p in range(1, pg.pages + 1) %}
+      {% if p == 1 or p == pg.pages or (p >= pg.page - 2 and p <= pg.page + 2) %}
+        {% set _ = win.append(p) %}
+      {% endif %}
+    {% endfor %}
+    {% set ns = namespace(prev=0) %}
+    {% for p in win %}
+      {% if p - ns.prev > 1 %}<span class="pg dots">…</span>{% endif %}
+      {% if p == pg.page %}<span class="pg cur">{{ p }}</span>
+      {% else %}<a href="{{ pre }}{{ p }}" class="pg">{{ p }}</a>{% endif %}
+      {% set ns.prev = p %}
+    {% endfor %}
+
+    {% if pg.page < pg.pages %}<a href="{{ pre }}{{ pg.page + 1 }}" class="pg">»</a>
+    {% else %}<span class="pg off">»</span>{% endif %}
+  </div>
+</div>
+{% elif pg.total %}
+<div class="pager"><div class="pager-info">Всего: <b>{{ pg.total }}</b></div></div>
+{% endif %}
+{% endmacro %}
+
+{# Подтверждение ustuni: ДА/НЕТ tegi, ruxsat bo'lsa — bosiladigan pereklyuchatel #}
+{% macro confirm_cell(e, can_confirm) %}
+<td data-label="Подтверждение снабжения">
+  {% if can_confirm %}
+  <form method="post" action="/stoplist/{{ e.id }}/confirm" class="inline-f">
+    <input type="hidden" name="supply_confirmed" value="{{ 0 if e.supply_confirmed else 1 }}">
+    <button type="submit" class="conf-tag {{ 'yes' if e.supply_confirmed else 'no' }}"
+            title="Нажмите, чтобы изменить">{{ confirm_label(e.supply_confirmed) }}</button>
+  </form>
+  {% else %}
+  <span class="conf-tag {{ 'yes' if e.supply_confirmed else 'no' }} ro">{{ confirm_label(e.supply_confirmed) }}</span>
+  {% endif %}
+</td>
+{% endmacro %}
+
+{# Qatorni bosib yozuv sahifasiga o'tish.
+   Ichidagi maydonlar (izoh, ДА/НЕТ tugmasi, «Убрать») bosilganda o'tmaydi. #}
+{% macro row_link_script() %}
+<script>
+(function(){
+  var IGNORE = 'a,button,input,select,textarea,label,form';
+  document.addEventListener('click', function(ev){
+    var row = ev.target.closest ? ev.target.closest('tr.row-link') : null;
+    if (!row) return;
+    if (ev.target.closest(IGNORE)) return;              // interaktiv element bosildi
+    if (String(window.getSelection())) return;          // matn belgilanayotgan edi
+    var href = row.dataset.href;
+    if (ev.ctrlKey || ev.metaKey || ev.button === 1) window.open(href, '_blank');
+    else window.location.href = href;
+  });
+  // klaviatura: Enter yoki Probel
+  document.addEventListener('keydown', function(ev){
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    var row = ev.target.classList && ev.target.classList.contains('row-link') ? ev.target : null;
+    if (!row) return;
+    ev.preventDefault();
+    window.location.href = row.dataset.href;
+  });
+})();
+</script>
+{% endmacro %}
+
+{# Xabar bannerlari (xato / muvaffaqiyat) #}
+{% macro flash(ok_msg, err_msg) %}
+{% if err_msg %}<div class="flash err">{{ err_msg }}</div>{% endif %}
+{% if ok_msg %}<div class="flash ok">{{ ok_msg }}</div>{% endif %}
+{% endmacro %}

@@ -12,7 +12,7 @@ from fastapi import FastAPI, Depends, Request, Form, HTTPException, File, Upload
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text as sqltext
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db, SessionLocal
@@ -31,9 +31,15 @@ def _ensure_columns():
               ("requests", "subcategory_id", "INTEGER"),
               ("branches", "phone", "VARCHAR(40) DEFAULT ''"),
               ("branches", "director_name", "VARCHAR(120) DEFAULT ''"),
+              ("branches", "tg_chat_ids", "TEXT DEFAULT ''"),
               ("notifications", "from_name", "VARCHAR(120)"),
               ("stop_entries", "resolved_at", "TIMESTAMP"),
               ("stop_entries", "supply_comment", "TEXT DEFAULT ''"),
+              ("stop_entries", "supply_confirmed", "BOOLEAN DEFAULT FALSE"),
+              ("stop_entries", "confirmed_by", "INTEGER"),
+              ("stop_entries", "confirmed_at", "TIMESTAMP"),
+              ("stop_entries", "updated_by", "INTEGER"),
+              ("stop_entries", "updated_at", "TIMESTAMP"),
               ("users", "perms", "TEXT"),
               ("requests", "dep_number", "INTEGER")]
     try:
@@ -52,8 +58,38 @@ def _ensure_columns():
         print(">>> [MAXWAY] ensure_columns xato:", e, flush=True)
 
 
+def _ensure_indexes():
+    """Stop-list ro'yxati tez ochilishi uchun indekslar (SQLite + Postgres mos).
+    create_all faqat yangi jadval yaratganda indeks qo'yadi — mavjud jadvalga qo'lda."""
+    from sqlalchemy import inspect as sa_inspect
+    idx = [("stop_entries", "ix_stop_entries_created_at", "created_at"),
+           ("stop_entries", "ix_stop_entries_branch_id", "branch_id"),
+           ("stop_entries", "ix_stop_entries_menu_item_id", "menu_item_id"),
+           ("stop_entries", "ix_stop_entries_reason", "reason"),
+           ("stop_entries", "ix_stop_entries_supply_confirmed", "supply_confirmed"),
+           ("stop_entries", "ix_stop_entries_resolved", "resolved"),
+           # ro'yxat doim (resolved + sana) bo'yicha o'qiladi — kompozit indeks
+           ("stop_entries", "ix_stop_entries_resolved_created", "resolved, created_at")]
+    try:
+        insp = sa_inspect(engine)
+        tables = insp.get_table_names()
+        for table, name, cols in idx:
+            if table not in tables:
+                continue
+            have = {i["name"] for i in insp.get_indexes(table)}
+            if name in have:
+                continue
+            with engine.begin() as conn:
+                conn.exec_driver_sql(
+                    f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({cols})")
+            print(f">>> [MAXWAY] indeks '{name}' yaratildi", flush=True)
+    except Exception as e:
+        print(">>> [MAXWAY] ensure_indexes xato:", e, flush=True)
+
+
 print(">>> [MAXWAY] ensure_columns boshlandi", flush=True)
 _ensure_columns()
+_ensure_indexes()
 print(">>> [MAXWAY] ensure_columns tugadi", flush=True)
 
 
@@ -166,8 +202,12 @@ STATUS_LABELS = {
 }
 PRIORITY_LABELS = {"low": "Низкий", "medium": "Средний", "high": "Высокий"}
 ROLE_LABELS = {"admin": "АДМИН", "manager": "МЕНЕДЖЕР", "executor": "ИСПОЛНИТЕЛЬ", "client": "ЗАКАЗЧИК", "viewer": "ПРОСМОТР", "kpp": "КПП"}
-# Stop-list sabablari
+# Stop-list sabablari (spravochnik). Yangi yozuvlar shu ro'yxatdan tanlanadi.
 REASON_LABELS = {
+    "equipment_broken": "Сломалось оборудование",
+    "supplier_no_product": "Нет продукта у поставщика",
+    "wrong_order": "Неправильный заказ",
+    "menu_removed": "Вывод из меню продукта",
     "sales_growth": "Рост продаж",
     "wrong_forecast": "Неправильный прогноз продаж",
     "supplier_late": "Поставщик опоздал",
@@ -175,10 +215,30 @@ REASON_LABELS = {
     "branch_no_order": "Не заказал филиал",
     "tech_problem": "Технический проблема",
 }
+CONFIRM_LABELS = {True: "ДА", False: "НЕТ"}
+# Stop-list ro'yxati: sahifalash va saralash
+STOP_PAGE_SIZES = (10, 25, 50, 100)
+STOP_PAGE_SIZE_DEFAULT = 25
+# tashqi nom -> saralanadigan ustun (SQL injection'ga yopiq: faqat shu kalitlar)
+STOP_SORT_FIELDS = {
+    "created_at": lambda: models.StopEntry.created_at,
+    "branch": lambda: models.Branch.name,
+    "dish": lambda: models.MenuItem.name,
+    "reason": lambda: models.StopEntry.reason,
+    "comment": lambda: models.StopEntry.comment,
+    "supply_confirmed": lambda: models.StopEntry.supply_confirmed,
+    "supply_comment": lambda: models.StopEntry.supply_comment,
+    "resolved_at": lambda: models.StopEntry.resolved_at,
+}
+# matn maydonlari uchun chegaralar (backend validatsiyasi)
+STOP_COMMENT_MAX = 1000
 
 templates.env.globals.update(
     STATUS_LABELS=STATUS_LABELS, PRIORITY_LABELS=PRIORITY_LABELS,
-    ROLE_LABELS=ROLE_LABELS, REASON_LABELS=REASON_LABELS, APP_NAME="MAXWAY", now=datetime.utcnow,
+    ROLE_LABELS=ROLE_LABELS, REASON_LABELS=REASON_LABELS,
+    CONFIRM_LABELS=CONFIRM_LABELS, STOP_PAGE_SIZES=STOP_PAGE_SIZES,
+    confirm_label=lambda v: CONFIRM_LABELS[bool(v)],
+    APP_NAME="MAXWAY", now=datetime.utcnow,
 )
 
 
@@ -230,6 +290,30 @@ def send_telegram(chat_id: str, text: str, button_url: str = "",
         urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=8)
     except Exception:
         pass
+
+
+def branch_chat_ids(db: Session, r: models.Request, creator=None) -> List[str]:
+    """Zayavka filialiga tegishli barcha telegram chat_id lar (takrorsiz).
+    Manba: zayavka egasining chat_id si + filialga yozilgan qo'shimcha ID lar."""
+    ids, seen = [], set()
+
+    def _add(cid):
+        cid = (cid or "").strip()
+        if cid and cid not in seen:
+            seen.add(cid)
+            ids.append(cid)
+
+    if creator is None and r.created_by:
+        creator = db.get(models.User, r.created_by)
+    if creator:
+        _add(creator.telegram_chat_id)
+    br_id = r.branch_id or (creator.user_branch_id if creator else None)
+    if br_id:
+        b = db.get(models.Branch, br_id)
+        raw = (b.tg_chat_ids or "") if b else ""
+        for part in raw.replace(";", ",").replace("\n", ",").replace(" ", ",").split(","):
+            _add(part)
+    return ids
 
 
 def base_requests(db: Session, user):
@@ -844,12 +928,11 @@ def add_comment(req_id: int, request: Request, text: str = Form(...),
                    from_name=display_name(user)))
             db.commit()
             creator = db.get(models.User, r.created_by)
-            if creator and creator.telegram_chat_id:
-                send_telegram(creator.telegram_chat_id,
-                    f"💬 <b>Новый комментарий — MAXWAY</b>\n\n"
-                    f"📌 <b>{r.title}</b>\n"
-                    f"👤 {user.full_name}:\n{text.strip()}",
-                    button_url=f"{get_app_url()}{link}")
+            tg_text = (f"💬 <b>Новый комментарий — MAXWAY</b>\n\n"
+                       f"📌 <b>{r.title}</b>\n"
+                       f"👤 {user.full_name}:\n{text.strip()}")
+            for cid in branch_chat_ids(db, r, creator):
+                send_telegram(cid, tg_text, button_url=f"{get_app_url()}{link}")
     return RedirectResponse(f"/requests/{req_id}", 302)
 
 
@@ -901,11 +984,11 @@ def add_solution(req_id: int, request: Request, comment: str = Form(""),
                from_name=display_name(user)))
         db.commit()
         creator = db.get(models.User, r.created_by)
-        if creator and creator.telegram_chat_id:
-            send_telegram(creator.telegram_chat_id,
-                f"✅ <b>Решение добавлено — MAXWAY</b>\n\n📌 <b>{r.title}</b>\n"
-                f"👤 {user.full_name}" + (f"\n💬 {comment.strip()}" if comment.strip() else ""),
-                button_url=f"{get_app_url()}{link}")
+        tg_text = (f"✅ <b>Решение добавлено — MAXWAY</b>\n\n📌 <b>{r.title}</b>\n"
+                   f"👤 {user.full_name}"
+                   + (f"\n💬 {comment.strip()}" if comment.strip() else ""))
+        for cid in branch_chat_ids(db, r, creator):
+            send_telegram(cid, tg_text, button_url=f"{get_app_url()}{link}")
     return RedirectResponse(f"/requests/{req_id}", 302)
 
 
@@ -1392,12 +1475,14 @@ def admin_cat_edit(dep_id: int, request: Request, name: str = Form(...),
 def admin_branch_create(request: Request, name: str = Form(...), location: str = Form(""),
                         phone: str = Form(""), director_name: str = Form(""),
                         login_email: str = Form(""), password: str = Form(""),
+                        tg_chat_ids: str = Form(""),
                         db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
     b = models.Branch(name=name.strip(), location=location.strip(),
-                      phone=phone.strip(), director_name=director_name.strip())
+                      phone=phone.strip(), director_name=director_name.strip(),
+                      tg_chat_ids=tg_chat_ids.strip())
     db.add(b); db.flush()
     # filial uchun login (klient) yaratish
     login_email = login_email.lower().strip()
@@ -1426,7 +1511,8 @@ def admin_branch_delete(bid: int, request: Request, db: Session = Depends(get_db
 def admin_branch_edit(bid: int, request: Request, name: str = Form(...),
                       location: str = Form(""), phone: str = Form(""),
                       director_name: str = Form(""), login_email: str = Form(""),
-                      password: str = Form(""), db: Session = Depends(get_db)):
+                      password: str = Form(""), tg_chat_ids: str = Form(""),
+                      db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
@@ -1436,6 +1522,7 @@ def admin_branch_edit(bid: int, request: Request, name: str = Form(...),
         b.location = location.strip()
         b.phone = phone.strip()
         b.director_name = director_name.strip()
+        b.tg_chat_ids = tg_chat_ids.strip()
         # filial logini (client akkaunt)
         login_email = login_email.lower().strip()
         client = db.query(models.User).filter(
@@ -1493,8 +1580,11 @@ PERMISSION_DEFS = [
     ("create_request", "Создавать заявки", "Заявки"),
     ("assign",         "Назначать исполнителей", "Заявки"),
     ("add_stop",       "Добавлять в стоп-лист", "Стоп-лист"),
+    ("edit_stop",      "Редактировать запись стоп-листа", "Стоп-лист"),
     ("resolve_stop",   "Убирать из стоп-листа", "Стоп-лист"),
     ("comment_stop",   "Комментировать стоп-лист (снабжение)", "Стоп-лист"),
+    ("confirm_stop",   "Подтверждать причину стопа (снабжение)", "Стоп-лист"),
+    ("export_stop",    "Выгружать стоп-лист в Excel", "Стоп-лист"),
     ("manage_menu",    "Управлять меню стоп-листа", "Стоп-лист"),
     ("view_analytics", "Видеть аналитику", "Аналитика"),
 ]
@@ -1510,10 +1600,18 @@ def _role_default(user, key):
         return r in (Role.admin, Role.manager)
     if key == "add_stop":
         return r == Role.client
+    if key == "edit_stop":
+        # filial — o'z yozuvini, Снабжение — o'z maydonlarini tahrirlaydi
+        return r == Role.client or is_supply(user)
     if key == "resolve_stop":
         return r == Role.client or is_supply(user)
     if key == "comment_stop":
         return is_supply(user)
+    if key == "confirm_stop":
+        # stop sababini tasdiqlash — faqat Снабжение (va admin, has_perm'da)
+        return is_supply(user)
+    if key == "export_stop":
+        return r in (Role.client, Role.viewer) or is_supply(user)
     if key == "manage_menu":
         return r == Role.manager and is_supply(user)
     if key == "view_analytics":
@@ -1551,73 +1649,289 @@ def can_manage_menu(user):
     return has_perm(user, "manage_menu")
 
 
+# ---------- Stop-list: ruxsatlar (maydonlar darajasida) ----------
+def can_edit_stop_branch_fields(user, e) -> bool:
+    """Filial maydonlari (причина, комментарий филиала) — o'z filiali yoki admin."""
+    if user.role == Role.admin:
+        return True
+    if not has_perm(user, "edit_stop"):
+        return False
+    if user.role == Role.client:
+        return e.branch_id == user.user_branch_id
+    return False
+
+
+def can_edit_stop_supply_comment(user, e) -> bool:
+    """Снабжение izohi."""
+    return has_perm(user, "comment_stop")
+
+
+def can_confirm_stop(user, e) -> bool:
+    """Подтверждение причины стопа отделом снабжения (ДА/НЕТ)."""
+    return has_perm(user, "confirm_stop")
+
+
+def can_view_stop(user, e) -> bool:
+    """Yozuvni ko'rish: filial faqat o'zinikini, qolganlar — ruxsatga qarab."""
+    if not can_see_stoplist(user):
+        return False
+    if user.role == Role.client:
+        return e.branch_id == user.user_branch_id
+    return True
+
+
+# ---------- Stop-list: filtr / saralash / sahifalash ----------
+def _stop_filters(user, branch_id="", menu_item_id="", reason="", confirmed="",
+                  date_from="", date_to="", month="") -> dict:
+    """Query paramlarni tozalaydi. Noto'g'ri qiymat — e'tiborsiz qoldiriladi (filtr yo'q)."""
+    f = {"branch_id": None, "menu_item_id": None, "reason": "", "confirmed": "",
+         "date_from": "", "date_to": "", "month": ""}
+    # filial: klient doim o'z filiali bilan cheklanadi (backendda majburiy)
+    if user.role == Role.client:
+        f["branch_id"] = user.user_branch_id
+    elif str(branch_id).isdigit():
+        f["branch_id"] = int(branch_id)
+    if str(menu_item_id).isdigit():
+        f["menu_item_id"] = int(menu_item_id)
+    if reason in REASON_LABELS:
+        f["reason"] = reason
+    if confirmed in ("yes", "no"):
+        f["confirmed"] = confirmed
+    for key, val in (("date_from", date_from), ("date_to", date_to)):
+        val = (val or "").strip()
+        if val:
+            try:
+                datetime.strptime(val, "%Y-%m-%d")
+                f[key] = val
+            except ValueError:
+                pass
+    month = (month or "").strip()
+    if month:
+        try:
+            datetime.strptime(month, "%Y-%m")
+            f["month"] = month
+        except ValueError:
+            pass
+    return f
+
+
+def _stop_query(db: Session, user, f: dict, resolved: bool):
+    """Filtrlangan StopEntry query. branch/menu_item darhol yuklanadi (N+1 yo'q)."""
+    from sqlalchemy.orm import contains_eager
+    q = (db.query(models.StopEntry)
+         .outerjoin(models.Branch, models.StopEntry.branch_id == models.Branch.id)
+         .outerjoin(models.MenuItem, models.StopEntry.menu_item_id == models.MenuItem.id)
+         .options(contains_eager(models.StopEntry.branch),
+                  contains_eager(models.StopEntry.menu_item))
+         .filter(models.StopEntry.resolved == resolved))
+    # klient filialga biriktirilmagan bo'lsa — hech nima ko'rmaydi (ma'lumot sizib chiqmasin)
+    if user.role == Role.client and not f["branch_id"]:
+        return q.filter(sqltext("1 = 0"))
+    if f["branch_id"]:
+        q = q.filter(models.StopEntry.branch_id == f["branch_id"])
+    if f["menu_item_id"]:
+        q = q.filter(models.StopEntry.menu_item_id == f["menu_item_id"])
+    if f["reason"]:
+        q = q.filter(models.StopEntry.reason == f["reason"])
+    if f["confirmed"]:
+        q = q.filter(models.StopEntry.supply_confirmed == (f["confirmed"] == "yes"))
+    if f["month"]:
+        m0 = datetime.strptime(f["month"], "%Y-%m")
+        m1 = m0.replace(year=m0.year + 1, month=1) if m0.month == 12 \
+            else m0.replace(month=m0.month + 1)
+        q = q.filter(models.StopEntry.created_at >= m0, models.StopEntry.created_at < m1)
+    if f["date_from"]:
+        q = q.filter(models.StopEntry.created_at >= datetime.strptime(f["date_from"], "%Y-%m-%d"))
+    if f["date_to"]:
+        q = q.filter(models.StopEntry.created_at
+                     < datetime.strptime(f["date_to"], "%Y-%m-%d") + timedelta(days=1))
+    return q
+
+
+def _stop_sorted(q, sort_by: str, sort_order: str, resolved: bool):
+    """Saralash. Faqat oq ro'yxatdagi ustunlar — SQL injection imkonsiz."""
+    if sort_by not in STOP_SORT_FIELDS:
+        sort_by = "resolved_at" if resolved else "created_at"
+    order = "asc" if sort_order == "asc" else "desc"
+    col = STOP_SORT_FIELDS[sort_by]()
+    expr = col.asc() if order == "asc" else col.desc()
+    if sort_by == "resolved_at":
+        expr = expr.nullslast()
+    # barqaror tartib uchun ikkilamchi kalit
+    return q.order_by(expr, models.StopEntry.id.desc()), sort_by, order
+
+
+def _stop_page(q, page: str, page_size: str):
+    """Sahifalash. Qaytadi: (yozuvlar, meta-dict)."""
+    try:
+        size = int(page_size)
+    except (TypeError, ValueError):
+        size = STOP_PAGE_SIZE_DEFAULT
+    if size not in STOP_PAGE_SIZES:
+        size = STOP_PAGE_SIZE_DEFAULT
+    total = q.order_by(None).count()
+    pages = max(1, -(-total // size))
+    try:
+        cur = int(page)
+    except (TypeError, ValueError):
+        cur = 1
+    cur = min(max(cur, 1), pages)
+    items = q.offset((cur - 1) * size).limit(size).all()
+    return items, {"total": total, "page": cur, "page_size": size, "pages": pages}
+
+
+def _name_key(s: str):
+    """Alifbo tartibi uchun kalit. SQLite'ning ORDER BY'i baytlar bo'yicha saralaydi:
+    kichik harflar va «Ё» ro'yxat oxiriga tushib qoladi. Bu kalit buni to'g'rilaydi."""
+    return (s or "").casefold().replace("ё", "е")
+
+
+def sorted_by_name(items):
+    """Nomi bo'yicha to'g'ri alifbo tartibi (lotin/kirill, katta-kichik harf aralash)."""
+    return sorted(items, key=lambda x: _name_key(x.name))
+
+
+def _validate_stop(db: Session, branch_id, menu_item_id, reason,
+                   comment="", supply_comment=""):
+    """Backend validatsiyasi. Qaytadi: (xatolar ro'yxati, tozalangan qiymatlar)."""
+    errors = []
+    if not branch_id:
+        errors.append("Филиал обязателен")
+    elif not db.get(models.Branch, branch_id):
+        errors.append("Филиал не найден")
+    if not menu_item_id:
+        errors.append("Блюдо обязательно")
+    elif not db.get(models.MenuItem, menu_item_id):
+        errors.append("Блюдо не найдено")
+    if not reason:
+        errors.append("Причина обязательна")
+    elif reason not in REASON_LABELS:
+        errors.append("Причина не найдена в справочнике")
+    comment = (comment or "").strip()
+    supply_comment = (supply_comment or "").strip()
+    if len(comment) > STOP_COMMENT_MAX:
+        errors.append(f"Комментарий филиала — максимум {STOP_COMMENT_MAX} символов")
+    if len(supply_comment) > STOP_COMMENT_MAX:
+        errors.append(f"Комментарий снабжения — максимум {STOP_COMMENT_MAX} символов")
+    return errors, {"comment": comment, "supply_comment": supply_comment}
+
+
+def _parse_bool(v) -> bool:
+    """ДА/НЕТ qiymatini boolean'ga aylantiradi (form ham, JSON ham)."""
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("1", "true", "yes", "on", "да")
+
+
+def _stop_dict(e) -> dict:
+    """Bitta yozuvning JSON ko'rinishi (API va detal sahifa uchun)."""
+    return {
+        "id": e.id,
+        "created_at": e.created_at.strftime("%Y-%m-%d %H:%M") if e.created_at else None,
+        "branch_id": e.branch_id,
+        "branch": e.branch.name if e.branch else None,
+        "product_id": e.menu_item_id,
+        "product": e.menu_item.name if e.menu_item else None,
+        "reason": e.reason,
+        "reason_label": REASON_LABELS.get(e.reason, e.reason),
+        "branch_comment": e.comment or "",
+        "supply_confirmed": bool(e.supply_confirmed),
+        "supply_comment": e.supply_comment or "",
+        "created_by": e.created_by,
+        "created_by_name": display_name(e.creator) if e.creator else None,
+        "updated_at": e.updated_at.strftime("%Y-%m-%d %H:%M") if e.updated_at else None,
+        "updated_by": e.updated_by,
+        "updated_by_name": display_name(e.updater) if e.updater else None,
+        "confirmed_at": e.confirmed_at.strftime("%Y-%m-%d %H:%M") if e.confirmed_at else None,
+        "confirmed_by_name": display_name(e.confirmer) if e.confirmer else None,
+        "resolved": bool(e.resolved),
+        "resolved_at": e.resolved_at.strftime("%Y-%m-%d %H:%M") if e.resolved_at else None,
+    }
+
+
+def _touch_stop(e, user):
+    """Audit: har qanday o'zgarishда kim va qachon o'zgartirgani yoziladi."""
+    e.updated_by = user.id
+    e.updated_at = models.tashkent_now()
+
+
+def _stoplist_context(request: Request, db: Session, user, resolved: bool,
+                      branch_id, menu_item_id, reason, confirmed,
+                      date_from, date_to, month, sort_by, sort_order, page, page_size):
+    """/stoplist va /stoplist/history uchun umumiy kontekst (filtr+sort+pagination)."""
+    is_client = user.role == Role.client
+    f = _stop_filters(user, branch_id, menu_item_id, reason, confirmed,
+                      date_from, date_to, month)
+    q = _stop_query(db, user, f, resolved)
+    q, sort_by, sort_order = _stop_sorted(q, sort_by, sort_order, resolved)
+    entries, pg = _stop_page(q, page, page_size)
+    # filtr uchun spravochniklar
+    branches = [] if is_client else sorted_by_name(db.query(models.Branch).all())
+    dishes = sorted_by_name(db.query(models.MenuItem).all())
+    # joriy filtrni saqlab qoluvchi query-string (sort/pagination/export havolalari uchun)
+    keep = {"branch_id": f["branch_id"] if not is_client else "",
+            "menu_item_id": f["menu_item_id"], "reason": f["reason"],
+            "confirmed": f["confirmed"], "date_from": f["date_from"],
+            "date_to": f["date_to"], "month": f["month"], "page_size": pg["page_size"]}
+    qs = urllib.parse.urlencode({k: v for k, v in keep.items() if v not in ("", None)})
+    # klientning filiali majburiy filtr — uni "foydalanuvchi qo'ygan filtr" deb hisoblamaymiz
+    has_filters = bool(f["menu_item_id"] or f["reason"] or f["confirmed"]
+                       or f["date_from"] or f["date_to"] or f["month"]
+                       or (f["branch_id"] and not is_client))
+    return {
+        "request": request, "user": user, "entries": entries, "is_client": is_client,
+        "branches": branches, "dishes": dishes, "f": f, "pg": pg,
+        "has_filters": has_filters,
+        "sort_by": sort_by, "sort_order": sort_order, "qs": qs,
+        "cur_month": models.tashkent_now().strftime("%Y-%m"),
+        "can_add": has_perm(user, "add_stop"),
+        "can_resolve": has_perm(user, "resolve_stop"),
+        "can_comment": has_perm(user, "comment_stop"),
+        "can_confirm": has_perm(user, "confirm_stop"),
+        "can_edit": has_perm(user, "edit_stop") or user.role == Role.admin,
+        "can_export": has_perm(user, "export_stop"),
+    }
+
+
 @app.get("/stoplist", response_class=HTMLResponse)
-def stoplist_page(request: Request, sync: str = "", branch_id: str = "",
-                  date_from: str = "", date_to: str = "", month: str = "",
-                  db: Session = Depends(get_db)):
+def stoplist_page(request: Request, sync: str = "", err: str = "", ok: str = "",
+                  branch_id: str = "", menu_item_id: str = "", reason: str = "",
+                  confirmed: str = "", date_from: str = "", date_to: str = "",
+                  month: str = "", sort_by: str = "created_at", sort_order: str = "desc",
+                  page: str = "1", page_size: str = "", db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
     if not can_see_stoplist(user):
         return RedirectResponse("/dashboard", 302)
-    is_client = user.role == Role.client
-    menu_items = db.query(models.MenuItem).filter(models.MenuItem.is_active == True)\
-        .order_by(models.MenuItem.name).all() if is_client else []
-    q = db.query(models.StopEntry).filter(models.StopEntry.resolved == False)
-    if is_client:
-        q = q.filter(models.StopEntry.branch_id == user.user_branch_id)
-    # ---- Filtrlar (dashboarddagidek) ----
-    f_branch = int(branch_id) if str(branch_id).isdigit() else None
-    if f_branch and not is_client:
-        q = q.filter(models.StopEntry.branch_id == f_branch)
-    if month.strip():
-        try:
-            m0 = datetime.strptime(month.strip(), "%Y-%m")
-            m1 = m0.replace(year=m0.year + 1, month=1) if m0.month == 12 else m0.replace(month=m0.month + 1)
-            q = q.filter(models.StopEntry.created_at >= m0, models.StopEntry.created_at < m1)
-        except ValueError:
-            pass
-    if date_from.strip():
-        try:
-            q = q.filter(models.StopEntry.created_at >= datetime.strptime(date_from.strip(), "%Y-%m-%d"))
-        except ValueError:
-            pass
-    if date_to.strip():
-        try:
-            q = q.filter(models.StopEntry.created_at < datetime.strptime(date_to.strip(), "%Y-%m-%d") + timedelta(days=1))
-        except ValueError:
-            pass
-    entries = q.order_by(models.StopEntry.created_at.desc()).all()
-    branches = db.query(models.Branch).order_by(models.Branch.name).all() if not is_client else []
-    cur_month = (datetime.utcnow() + timedelta(hours=5)).strftime("%Y-%m")
-    return templates.TemplateResponse(request, "stoplist.html", {
-        "request": request, "user": user, "active": "stoplist",
-        "menu_items": menu_items, "entries": entries, "is_client": is_client,
-        "can_resolve": has_perm(user, "resolve_stop"),
-        "can_comment": has_perm(user, "comment_stop"), "sync_msg": sync,
-        "branches": branches, "f_branch": f_branch,
-        "f_date_from": date_from, "f_date_to": date_to, "f_month": month,
-        "cur_month": cur_month,
-    })
+    ctx = _stoplist_context(request, db, user, False, branch_id, menu_item_id, reason,
+                            confirmed, date_from, date_to, month,
+                            sort_by, sort_order, page, page_size)
+    # qo'shish formasi uchun faqat faol menyu (alifbo tartibida)
+    ctx["menu_items"] = sorted_by_name(db.query(models.MenuItem).filter(
+        models.MenuItem.is_active == True).all())
+    ctx.update({"active": "stoplist", "sync_msg": sync, "err_msg": err, "ok_msg": ok})
+    return templates.TemplateResponse(request, "stoplist.html", ctx)
 
 
 @app.get("/stoplist/history", response_class=HTMLResponse)
-def stoplist_history_page(request: Request, db: Session = Depends(get_db)):
+def stoplist_history_page(request: Request, err: str = "", ok: str = "",
+                          branch_id: str = "", menu_item_id: str = "", reason: str = "",
+                          confirmed: str = "", date_from: str = "", date_to: str = "",
+                          month: str = "", sort_by: str = "resolved_at",
+                          sort_order: str = "desc", page: str = "1", page_size: str = "",
+                          db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
     if not can_see_stoplist(user):
         return RedirectResponse("/dashboard", 302)
-    is_client = user.role == Role.client
-    hq = db.query(models.StopEntry).filter(models.StopEntry.resolved == True)
-    if is_client:
-        hq = hq.filter(models.StopEntry.branch_id == user.user_branch_id)
-    history = hq.order_by(models.StopEntry.resolved_at.desc().nullslast()).limit(500).all()
-    return templates.TemplateResponse(request, "stoplist_history.html", {
-        "request": request, "user": user, "active": "stophistory",
-        "history": history, "is_client": is_client,
-        "can_comment": has_perm(user, "comment_stop"),
-    })
+    ctx = _stoplist_context(request, db, user, True, branch_id, menu_item_id, reason,
+                            confirmed, date_from, date_to, month,
+                            sort_by, sort_order, page, page_size)
+    ctx.update({"active": "stophistory", "err_msg": err, "ok_msg": ok,
+                "history": ctx["entries"]})
+    return templates.TemplateResponse(request, "stoplist_history.html", ctx)
 
 
 @app.get("/stoplist/menu", response_class=HTMLResponse)
@@ -1627,40 +1941,151 @@ def stoplist_menu_page(request: Request, sync: str = "", db: Session = Depends(g
         return RedirectResponse("/login", 302)
     if not can_manage_menu(user):
         return RedirectResponse("/dashboard", 302)
-    menu_items = db.query(models.MenuItem).order_by(models.MenuItem.name).all()
+    menu_items = sorted_by_name(db.query(models.MenuItem).all())
     return templates.TemplateResponse(request, "stoplist_menu.html", {
         "request": request, "user": user, "active": "stopmenu",
         "menu_items": menu_items, "sync_msg": sync,
     })
 
 
+def _create_stop_entries(db: Session, user, branch_id, item_ids, reason,
+                         comment, supply_comment="", supply_confirmed=False):
+    """Bir yoki bir nechta taomni stopga qo'yadi.
+    created_at / created_by — faqat backend belgilaydi (frontendga ishonilmaydi).
+    Qaytadi: (yaratilgan yozuvlar, xatolar, allaqachon stopda bo'lganlar)."""
+    if not item_ids:
+        return [], ["Блюдо обязательно"], []
+    created, skipped, errors = [], [], []
+    for mid in item_ids:
+        errs, clean = _validate_stop(db, branch_id, mid, reason, comment, supply_comment)
+        if errs:
+            return [], errs, []
+        mi = db.get(models.MenuItem, mid)
+        exists = db.query(models.StopEntry).filter(
+            models.StopEntry.branch_id == branch_id,
+            models.StopEntry.menu_item_id == mid,
+            models.StopEntry.resolved == False).first()
+        if exists:
+            skipped.append(mi.name)
+            continue
+        e = models.StopEntry(
+            branch_id=branch_id, menu_item_id=mid, reason=reason,
+            comment=clean["comment"], supply_comment=clean["supply_comment"],
+            supply_confirmed=bool(supply_confirmed),
+            created_by=user.id, created_at=models.tashkent_now())
+        if supply_confirmed:
+            e.confirmed_by = user.id
+            e.confirmed_at = models.tashkent_now()
+        db.add(e)
+        created.append(e)
+    if created:
+        db.commit()
+    return created, errors, skipped
+
+
 @app.post("/stoplist/add")
-def stoplist_add(request: Request, menu_name: List[str] = Form([]),
-                 reason: str = Form(...), comment: str = Form(""),
+def stoplist_add(request: Request, menu_item_id: List[int] = Form([]),
+                 menu_name: List[str] = Form([]), branch_id: str = Form(""),
+                 reason: str = Form(""), comment: str = Form(""),
                  db: Session = Depends(get_db)):
     user = current_user(request, db)
-    if not user or not user.user_branch_id or not has_perm(user, "add_stop"):
+    if not user:
         return RedirectResponse("/login", 302)
-    if reason not in REASON_LABELS:
-        return RedirectResponse("/stoplist", 302)
-    added = 0
+    if not has_perm(user, "add_stop"):
+        return RedirectResponse("/stoplist?err=" + urllib.parse.quote(
+            "Нет прав на добавление в стоп-лист"), 302)
+    # filial: klient — doim o'ziniki; admin/менеджер — formadan
+    if user.role == Role.client:
+        b_id = user.user_branch_id
+    else:
+        b_id = int(branch_id) if str(branch_id).isdigit() else None
+    # taomlar: id bo'yicha (yangi forma) yoki nomi bo'yicha (eski forma)
+    ids = list(menu_item_id)
     for nm in menu_name:
         mi = db.query(models.MenuItem).filter(
-            models.MenuItem.name == nm.strip(),
+            models.MenuItem.name == (nm or "").strip(),
             models.MenuItem.is_active == True).first()
-        if not mi:
-            continue
-        exists = db.query(models.StopEntry).filter(
-            models.StopEntry.branch_id == user.user_branch_id,
-            models.StopEntry.menu_item_id == mi.id,
-            models.StopEntry.resolved == False).first()
-        if not exists:
-            db.add(models.StopEntry(branch_id=user.user_branch_id, menu_item_id=mi.id,
-                   reason=reason, comment=comment.strip(), created_by=user.id))
-            added += 1
-    if added:
+        if mi and mi.id not in ids:
+            ids.append(mi.id)
+    created, errors, skipped = _create_stop_entries(db, user, b_id, ids, reason, comment)
+    if errors:
+        # xato bo'lsa — qo'shish sahifasiga qaytamiz, foydalanuvchi tuzatsin
+        return RedirectResponse("/stoplist/new?err=" + urllib.parse.quote("; ".join(errors)), 302)
+    msg = f"Добавлено записей: {len(created)}"
+    if skipped:
+        msg += f" · уже в стоп-листе: {', '.join(skipped[:5])}"
+    return RedirectResponse("/stoplist?ok=" + urllib.parse.quote(msg), 302)
+
+
+def _apply_stop_update(db: Session, user, e, data: dict):
+    """Yozuvni tahrirlash — har bir maydon o'z ruxsatiga tekshiriladi.
+    Qaytadi: (o'zgardimi, xato matni yoki None, HTTP kod)."""
+    changed = False
+    # --- filial maydonlari: причина, комментарий филиала ---
+    wants_branch = any(k in data for k in ("reason", "branch_comment"))
+    if wants_branch:
+        if not can_edit_stop_branch_fields(user, e):
+            return False, "Нет прав на редактирование полей филиала", 403
+        reason = data.get("reason", e.reason)
+        comment = data.get("branch_comment", e.comment)
+        errs, clean = _validate_stop(db, e.branch_id, e.menu_item_id, reason, comment)
+        if errs:
+            return False, "; ".join(errs), 400
+        if e.reason != reason:
+            e.reason = reason; changed = True
+        if (e.comment or "") != clean["comment"]:
+            e.comment = clean["comment"]; changed = True
+    # --- снабжение izohi ---
+    if "supply_comment" in data:
+        if not can_edit_stop_supply_comment(user, e):
+            return False, "Нет прав на комментарий снабжения", 403
+        val = (data["supply_comment"] or "").strip()
+        if len(val) > STOP_COMMENT_MAX:
+            return False, f"Комментарий снабжения — максимум {STOP_COMMENT_MAX} символов", 400
+        if (e.supply_comment or "") != val:
+            e.supply_comment = val; changed = True
+    # --- подтверждение причины стопа (ДА/НЕТ) ---
+    if "supply_confirmed" in data:
+        if not can_confirm_stop(user, e):
+            return False, "Нет прав на подтверждение причины стопа", 403
+        val = _parse_bool(data["supply_confirmed"])
+        if bool(e.supply_confirmed) != val:
+            e.supply_confirmed = val
+            e.confirmed_by = user.id if val else None
+            e.confirmed_at = models.tashkent_now() if val else None
+            changed = True
+    if changed:
+        _touch_stop(e, user)
         db.commit()
-    return RedirectResponse("/stoplist", 302)
+    return changed, None, 200
+
+
+@app.post("/stoplist/{sid}/edit")
+def stoplist_edit(sid: int, request: Request,
+                  reason: str = Form(None), branch_comment: str = Form(None),
+                  supply_comment: str = Form(None), supply_confirmed: str = Form(None),
+                  fields: str = Form(""), db: Session = Depends(get_db)):
+    """Yozuvni tahrirlash. `fields` — qaysi maydonlar yuborilgani (vergul bilan)."""
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    e = db.get(models.StopEntry, sid)
+    if not e:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    if not can_view_stop(user, e):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой записи")
+    sent = {n.strip() for n in fields.split(",") if n.strip()}
+    data = {}
+    for name, val in (("reason", reason), ("branch_comment", branch_comment),
+                      ("supply_comment", supply_comment),
+                      ("supply_confirmed", supply_confirmed)):
+        # checkbox yuborilmasa None keladi — shuning uchun `fields` ro'yxatiga tayanamiz
+        if name in sent or (val is not None and not sent):
+            data[name] = val if val is not None else ""
+    _, err, code = _apply_stop_update(db, user, e, data)
+    if err:
+        raise HTTPException(status_code=code, detail=err)
+    return RedirectResponse(f"/stoplist/{sid}?ok=" + urllib.parse.quote("Сохранено"), 302)
 
 
 @app.post("/stoplist/{sid}/comment")
@@ -1668,15 +2093,37 @@ def stoplist_comment(sid: int, request: Request, comment: str = Form(""),
                      db: Session = Depends(get_db)):
     """Снабжение xodimi o'z izohini (supply_comment) qo'shadi/tahrirlaydi."""
     user = current_user(request, db)
-    if not user or not has_perm(user, "comment_stop"):
+    if not user:
         return RedirectResponse("/login", 302)
     e = db.get(models.StopEntry, sid)
-    if e:
-        e.supply_comment = comment.strip()
-        db.commit()
+    if not e:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    _, err, code = _apply_stop_update(db, user, e, {"supply_comment": comment})
+    if err:
+        raise HTTPException(status_code=code, detail=err)
     ref = request.headers.get("referer") or "/stoplist"
     dest = "/stoplist/history" if "history" in ref else "/stoplist"
     return RedirectResponse(dest, 302)
+
+
+@app.post("/stoplist/{sid}/confirm")
+def stoplist_confirm(sid: int, request: Request, supply_confirmed: str = Form("0"),
+                     supply_comment: str = Form(None), db: Session = Depends(get_db)):
+    """Подтверждение причины стопа отделом снабжения (ДА/НЕТ)."""
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    e = db.get(models.StopEntry, sid)
+    if not e:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    data = {"supply_confirmed": supply_confirmed}
+    if supply_comment is not None:
+        data["supply_comment"] = supply_comment
+    _, err, code = _apply_stop_update(db, user, e, data)
+    if err:
+        raise HTTPException(status_code=code, detail=err)
+    ref = request.headers.get("referer") or "/stoplist"
+    return RedirectResponse(ref, 302)
 
 
 @app.post("/stoplist/{sid}/resolve")
@@ -1689,10 +2136,12 @@ def stoplist_resolve(sid: int, request: Request, db: Session = Depends(get_db)):
         # o'z filiali (client) yoki resolve ruxsati borlar
         ok = (user.role == Role.client and e.branch_id == user.user_branch_id) \
             or has_perm(user, "resolve_stop")
-        if ok:
-            e.resolved = True
-            e.resolved_at = datetime.utcnow() + timedelta(hours=5)
-            db.commit()
+        if not ok:
+            raise HTTPException(status_code=403, detail="Нет прав убирать из стоп-листа")
+        e.resolved = True
+        e.resolved_at = models.tashkent_now()
+        _touch_stop(e, user)
+        db.commit()
     return RedirectResponse("/stoplist", 302)
 
 
@@ -1799,41 +2248,68 @@ def _xlsx_title(name, used):
 
 
 @app.get("/stoplist/export")
-def stoplist_export(request: Request, mode: str = "active", db: Session = Depends(get_db)):
+def stoplist_export(request: Request, mode: str = "active",
+                    branch_id: str = "", menu_item_id: str = "", reason: str = "",
+                    confirmed: str = "", date_from: str = "", date_to: str = "",
+                    month: str = "", sort_by: str = "", sort_order: str = "desc",
+                    db: Session = Depends(get_db)):
+    """Excel eksport — ekrandagi filtrlar va saralash aynan qo'llanadi."""
     user = current_user(request, db)
     if not user or not can_see_stoplist(user):
         return RedirectResponse("/login", 302)
+    if not has_perm(user, "export_stop"):
+        raise HTTPException(status_code=403, detail="Нет прав на выгрузку в Excel")
     import openpyxl, io
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from sqlalchemy.orm import joinedload
     from fastapi.responses import StreamingResponse
     resolved = (mode == "history")
-    q = db.query(models.StopEntry).filter(models.StopEntry.resolved == resolved)
-    if user.role == Role.client:
-        q = q.filter(models.StopEntry.branch_id == user.user_branch_id)
-    order = models.StopEntry.resolved_at.desc().nullslast() if resolved else models.StopEntry.created_at.desc()
-    entries = q.order_by(order).all()
+    f = _stop_filters(user, branch_id, menu_item_id, reason, confirmed,
+                      date_from, date_to, month)
+    q = _stop_query(db, user, f, resolved).options(
+        joinedload(models.StopEntry.creator))
+    if not sort_by:
+        sort_by = "resolved_at" if resolved else "created_at"
+    q, _sb, _so = _stop_sorted(q, sort_by, sort_order, resolved)
+    entries = q.all()
 
-    headers = ["Филиал", "Блюдо", "Причина", "Комм. филиала", "Комм. снабжения", "Добавлено"] + (["Убрано"] if resolved else [])
-    widths = (24, 34, 26, 30, 30, 18) + ((18,) if resolved else ())
+    headers = ["Добавлено", "Филиал", "Блюдо", "Причина", "Комментарий Филиала",
+               "Подтверждение причины стопа отделом снабжения", "Комментарий Снабжения"]
+    widths = [18, 24, 34, 28, 30, 22, 30]
+    if resolved:
+        headers.append("Убрано"); widths.append(18)
 
     def row(e):
-        r = [e.branch.name if e.branch else "", e.menu_item.name if e.menu_item else "",
-             REASON_LABELS.get(e.reason, e.reason), e.comment or "", e.supply_comment or "",
-             e.created_at.strftime("%d.%m.%Y %H:%M")]
+        r = [e.created_at.strftime("%d.%m.%Y %H:%M") if e.created_at else "",
+             e.branch.name if e.branch else "—",
+             e.menu_item.name if e.menu_item else "—",
+             REASON_LABELS.get(e.reason, e.reason),
+             e.comment or "",
+             CONFIRM_LABELS[bool(e.supply_confirmed)],
+             e.supply_comment or ""]
         if resolved:
             r.append(e.resolved_at.strftime("%d.%m.%Y %H:%M") if e.resolved_at else "")
         return r
 
-    def fill(ws, items):
-        ws.append(headers)
-        for e in items:
-            ws.append(row(e))
-        for col, w in zip("ABCDEFG", widths):
-            ws.column_dimensions[col].width = w
+    head_fill = PatternFill("solid", fgColor="1E293B")
+    head_font = Font(color="FFFFFF", bold=True)
+    head_align = Alignment(vertical="center", wrap_text=True)
 
     wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Все филиалы"
-    fill(ws, entries)
+    wb.remove(wb.active)
+
+    def fill(title, items):
+        ws = wb.create_sheet(title)
+        ws.append(headers)
+        for c in ws[1]:
+            c.fill = head_fill; c.font = head_font; c.alignment = head_align
+        for e in items:
+            ws.append(row(e))
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+        ws.freeze_panes = "A2"
+
+    fill("Все филиалы", entries)
     # har bir filial uchun alohida varaq (klient bo'lmasa)
     if user.role != Role.client:
         by_branch = {}
@@ -1842,12 +2318,208 @@ def stoplist_export(request: Request, mode: str = "active", db: Session = Depend
             by_branch.setdefault(bn, []).append(e)
         used = {"Все филиалы"}
         for bn in sorted(by_branch):
-            fill(wb.create_sheet(_xlsx_title(bn, used)), by_branch[bn])
+            fill(_xlsx_title(bn, used), by_branch[bn])
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
-    tag = "istoriya" if resolved else "stop-list"
-    fname = f"{tag}-{(datetime.utcnow() + timedelta(hours=5)).strftime('%Y%m%d-%H%M')}.xlsx"
+    tag = "product_stops_history" if resolved else "product_stops"
+    fname = f"{tag}_{models.tashkent_now().strftime('%Y-%m-%d')}.xlsx"
     return StreamingResponse(
         buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@app.get("/stoplist/new", response_class=HTMLResponse)
+def stoplist_new_page(request: Request, err: str = "", db: Session = Depends(get_db)):
+    """Stopga qo'shish — alohida to'liq sahifa."""
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    if not has_perm(user, "add_stop"):
+        return RedirectResponse("/stoplist?err=" + urllib.parse.quote(
+            "Нет прав на добавление в стоп-лист"), 302)
+    is_client = user.role == Role.client
+    menu_items = sorted_by_name(db.query(models.MenuItem).filter(
+        models.MenuItem.is_active == True).all())
+    # allaqachon stopda turgan taomlar — qayta tanlanmasin
+    br_id = user.user_branch_id if is_client else None
+    on_stop = set()
+    if br_id:
+        on_stop = {r[0] for r in db.query(models.StopEntry.menu_item_id).filter(
+            models.StopEntry.branch_id == br_id,
+            models.StopEntry.resolved == False).all()}
+    return templates.TemplateResponse(request, "stoplist_new.html", {
+        "request": request, "user": user, "active": "stoplist",
+        "is_client": is_client, "menu_items": menu_items, "on_stop": on_stop,
+        "branches": [] if is_client else sorted_by_name(db.query(models.Branch).all()),
+        "my_branch": db.get(models.Branch, br_id) if br_id else None,
+        "err_msg": err,
+    })
+
+
+@app.get("/stoplist/{sid}", response_class=HTMLResponse)
+def stoplist_detail(sid: int, request: Request, ok: str = "", err: str = "",
+                    db: Session = Depends(get_db)):
+    """Yozuv haqida to'liq ma'lumot (просмотр) + ruxsat bo'lsa tahrirlash formasi."""
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    from sqlalchemy.orm import joinedload
+    e = (db.query(models.StopEntry)
+         .options(joinedload(models.StopEntry.branch),
+                  joinedload(models.StopEntry.menu_item),
+                  joinedload(models.StopEntry.creator),
+                  joinedload(models.StopEntry.updater),
+                  joinedload(models.StopEntry.confirmer))
+         .filter(models.StopEntry.id == sid).first())
+    if not e:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    if not can_view_stop(user, e):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой записи")
+    return templates.TemplateResponse(request, "stoplist_detail.html", {
+        "request": request, "user": user,
+        "active": "stophistory" if e.resolved else "stoplist",
+        "e": e, "ok_msg": ok, "err_msg": err,
+        "can_edit_branch": can_edit_stop_branch_fields(user, e),
+        "can_edit_supply": can_edit_stop_supply_comment(user, e),
+        "can_confirm": can_confirm_stop(user, e),
+        "can_resolve": (user.role == Role.client and e.branch_id == user.user_branch_id)
+                       or has_perm(user, "resolve_stop"),
+    })
+
+
+# ===================== STOP-LIST JSON API =====================
+@app.get("/api/product-stops")
+def api_product_stops(request: Request, mode: str = "active",
+                      branch_id: str = "", menu_item_id: str = "", reason: str = "",
+                      confirmed: str = "", date_from: str = "", date_to: str = "",
+                      month: str = "", sort_by: str = "created_at",
+                      sort_order: str = "desc", page: str = "1", page_size: str = "",
+                      db: Session = Depends(get_db)):
+    """Stop-list ro'yxati: filtr + saralash + sahifalash."""
+    user = current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    if not can_see_stoplist(user):
+        raise HTTPException(status_code=403, detail="Нет доступа к стоп-листу")
+    resolved = (mode == "history")
+    f = _stop_filters(user, branch_id, menu_item_id, reason, confirmed,
+                      date_from, date_to, month)
+    q = _stop_query(db, user, f, resolved)
+    q, sb, so = _stop_sorted(q, sort_by, sort_order, resolved)
+    items, pg = _stop_page(q, page, page_size)
+    return JSONResponse({"items": [_stop_dict(e) for e in items],
+                         "sort_by": sb, "sort_order": so, **pg})
+
+
+@app.get("/api/product-stops/{sid}")
+def api_product_stop_detail(sid: int, request: Request, db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    e = db.get(models.StopEntry, sid)
+    if not e:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    if not can_view_stop(user, e):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой записи")
+    return JSONResponse(_stop_dict(e))
+
+
+@app.post("/api/product-stops")
+async def api_product_stop_create(request: Request, db: Session = Depends(get_db)):
+    """Yangi stop yozuvi. created_at/created_by — faqat backend belgilaydi."""
+    user = current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    if not has_perm(user, "add_stop"):
+        raise HTTPException(status_code=403, detail="Нет прав на добавление в стоп-лист")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Ожидается JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Ожидается JSON-объект")
+    if user.role == Role.client:
+        b_id = user.user_branch_id
+    else:
+        b_id = body.get("branch_id")
+        b_id = int(b_id) if str(b_id).isdigit() else None
+    raw_ids = body.get("product_ids") or ([body["product_id"]] if body.get("product_id") else [])
+    ids = [int(i) for i in raw_ids if str(i).isdigit()]
+    confirmed = _parse_bool(body.get("supply_confirmed", False))
+    if confirmed and not has_perm(user, "confirm_stop"):
+        raise HTTPException(status_code=403, detail="Нет прав на подтверждение причины стопа")
+    created, errors, skipped = _create_stop_entries(
+        db, user, b_id, ids, body.get("reason", ""), body.get("branch_comment", ""),
+        body.get("supply_comment", ""), confirmed)
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+    return JSONResponse({"created": [_stop_dict(e) for e in created],
+                         "skipped": skipped}, status_code=201)
+
+
+@app.patch("/api/product-stops/{sid}")
+async def api_product_stop_update(sid: int, request: Request, db: Session = Depends(get_db)):
+    """Yozuvni tahrirlash. Har bir maydon alohida ruxsatga tekshiriladi."""
+    user = current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    e = db.get(models.StopEntry, sid)
+    if not e:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    if not can_view_stop(user, e):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой записи")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Ожидается JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Ожидается JSON-объект")
+    allowed = ("reason", "branch_comment", "supply_comment", "supply_confirmed")
+    data = {k: v for k, v in body.items() if k in allowed}
+    if not data:
+        raise HTTPException(status_code=400, detail="Нет полей для изменения")
+    _, err, code = _apply_stop_update(db, user, e, data)
+    if err:
+        raise HTTPException(status_code=code, detail=err)
+    db.refresh(e)
+    return JSONResponse(_stop_dict(e))
+
+
+# PUT — PATCH bilan bir xil semantika (mavjud maydonlar yangilanadi)
+app.add_api_route("/api/product-stops/{sid}", api_product_stop_update, methods=["PUT"])
+
+
+@app.get("/api/stop-reasons")
+def api_stop_reasons(request: Request, db: Session = Depends(get_db)):
+    """Sabablar spravochnigi (dropdown uchun)."""
+    user = current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    return JSONResponse([{"id": k, "name": v} for k, v in REASON_LABELS.items()])
+
+
+@app.get("/api/branches")
+def api_branches(request: Request, db: Session = Depends(get_db)):
+    """Filiallar spravochnigi. Klient — faqat o'z filialini ko'radi."""
+    user = current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    q = db.query(models.Branch)
+    if user.role == Role.client and user.user_branch_id:
+        q = q.filter(models.Branch.id == user.user_branch_id)
+    return JSONResponse([{"id": b.id, "name": b.name, "location": b.location or ""}
+                         for b in sorted_by_name(q.all())])
+
+
+@app.get("/api/products")
+def api_products(request: Request, active_only: str = "1", db: Session = Depends(get_db)):
+    """Blyudolar (menyu) spravochnigi."""
+    user = current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    q = db.query(models.MenuItem)
+    if active_only == "1":
+        q = q.filter(models.MenuItem.is_active == True)
+    return JSONResponse([{"id": m.id, "name": m.name}
+                         for m in sorted_by_name(q.all())])

@@ -105,7 +105,7 @@ button{font-family:inherit;cursor:pointer;border:none}
 .sidebar-foot .udep{font-size:12px;color:#64748b;margin-top:2px;display:flex;gap:6px;align-items:center}
 
 /* --- Main --- */
-.main{flex:1;margin-left:248px;display:flex;flex-direction:column}
+.main{flex:1;margin-left:248px;display:flex;flex-direction:column;min-width:0}
 .topbar{
   height:66px;background:#fff;border-bottom:1px solid var(--border);
   display:flex;align-items:center;justify-content:space-between;padding:0 28px;
@@ -121,7 +121,7 @@ button{font-family:inherit;cursor:pointer;border:none}
 }
 .user-pill{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px}
 
-.content{padding:28px;max-width:1700px;width:100%}
+.content{padding:28px;max-width:1700px;width:100%;margin-inline:auto;min-width:0}
 .page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:26px;gap:16px;flex-wrap:wrap}
 .page-head h1{font-size:28px;font-weight:800;letter-spacing:-.5px}
 .page-head p{color:var(--muted);margin-top:4px;font-size:15px}
@@ -153,7 +153,7 @@ button{font-family:inherit;cursor:pointer;border:none}
 .panel-head .title svg{width:18px;height:18px;color:var(--blue)}
 .badge{background:var(--blue-light);color:var(--blue);font-size:13px;font-weight:700;
   padding:2px 9px;border-radius:20px}
-.panel-body{padding:24px}
+.panel-body{padding:24px;min-width:0}
 .link-blue{color:var(--blue);font-weight:600;font-size:14px;display:inline-flex;align-items:center;gap:6px}
 
 /* --- Categories --- */
@@ -664,3 +664,173 @@ img, video, table { max-width: 100%; }
 /* Ijrochi karta avatari — rasm bo'lsa dumaloqni to'ldiradi */
 .ex-av{overflow:hidden}
 .ex-av img{width:46px;height:46px;border-radius:50%;object-fit:cover;display:block}
+
+
+/* ============================================================
+   СТОП-ЛИСТ — таблица, фильтры, сортировка, пагинация
+   ============================================================ */
+.stop-tbl{width:100%;border-collapse:separate;border-spacing:0}
+.stop-tbl thead th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#94a3b8;
+  font-weight:700;text-align:left;padding:0 14px 10px;white-space:nowrap}
+.stop-tbl tbody tr{background:var(--card);transition:box-shadow .12s,background .12s}
+.stop-tbl tbody tr:hover{box-shadow:0 2px 10px rgba(15,23,42,.06)}
+
+/* Butun qator bosiladigan — yozuv sahifasiga o'tadi */
+.stop-tbl tbody tr.row-link{cursor:pointer}
+.stop-tbl tbody tr.row-link:hover{background:#f8fafc}
+.stop-tbl tbody tr.row-link:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+/* qator ichidagi maydonlar odatdagidek ishlaydi (bosilganda o'tmaydi) */
+.stop-tbl tbody tr.row-link .inp,
+.stop-tbl tbody tr.row-link .btn,
+.stop-tbl tbody tr.row-link .conf-tag{cursor:auto}
+.stop-tbl tbody tr.row-link .btn,
+.stop-tbl tbody tr.row-link .conf-tag:not(.ro){cursor:pointer}
+.row-title{color:inherit}
+.stop-tbl tbody tr.row-link:hover .row-title{color:var(--blue);text-decoration:underline}
+.stop-tbl td{padding:12px 14px;border-top:1px solid var(--border);vertical-align:middle}
+.stop-tbl tbody tr td:first-child{border-left:3px solid var(--orange);border-radius:10px 0 0 10px}
+.stop-tbl tbody tr.done td:first-child{border-left-color:var(--green)}
+.stop-tbl tbody tr td:last-child{border-radius:0 10px 10px 0}
+.when-cell{white-space:nowrap}
+.when-cell .d{font-weight:700;color:#334155;font-size:13.5px}
+.when-cell .t{color:#94a3b8;font-size:12px;font-variant-numeric:tabular-nums}
+.dish-cell{font-weight:700;color:var(--text);font-size:14.5px}
+.branch-cell{font-weight:600;color:#475569;font-size:13.5px;white-space:nowrap}
+.reason-tag{display:inline-block;background:var(--yellow-bg);color:var(--yellow-text);
+  border:1px solid var(--yellow-border);font-weight:600;font-size:12.5px;padding:4px 11px;
+  border-radius:999px;white-space:nowrap}
+.cmt-cell{color:#475569;font-size:13.5px;max-width:260px}
+
+/* Sarlavhadagi saralash havolasi */
+.sort-link{display:inline-flex;align-items:center;gap:4px;color:#94a3b8;font-weight:700}
+.sort-link:hover{color:var(--blue)}
+.sort-link.on{color:var(--blue)}
+.sort-ar{font-size:9px;opacity:.7}
+
+/* Подтверждение ДА/НЕТ */
+.conf-tag{display:inline-block;font-weight:700;font-size:12.5px;padding:4px 12px;
+  border-radius:999px;border:1px solid transparent;background:#f1f5f9;color:var(--muted)}
+.conf-tag.yes{background:#f0fdf4;color:#15803d;border-color:#bbf7d0}
+.conf-tag.no{background:#fef2f2;color:#dc2626;border-color:#fecaca}
+.conf-tag:not(.ro){cursor:pointer}
+.conf-tag:not(.ro):hover{filter:brightness(.97);box-shadow:0 1px 4px rgba(15,23,42,.1)}
+.inline-f{margin:0;display:inline}
+
+/* Filtr paneli — HAR DOIM bitta qator. Joy yetmasa gorizontal scroll,
+   ikkinchi qatorga hech qachon tushmaydi (barcha ekranlarda). */
+.stop-filter{padding:10px 14px;margin-bottom:16px}
+.stop-filter form{
+  display:flex;gap:5px;align-items:center;
+  flex-wrap:nowrap;              /* ikkinchi qatorga tushmasin */
+  overflow-x:auto;overflow-y:hidden;
+  scrollbar-width:thin;
+  padding-bottom:2px;
+  font-size:clamp(12px,.85vw,15px);
+}
+.stop-filter form::-webkit-scrollbar{height:6px}
+.stop-filter form::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+/* Elementlar QISILMAYDI — matn har doim to'liq o'qiladi.
+   Joy yetmasa forma gorizontal siljiydi (qator hech qachon ikkiga bo'linmaydi). */
+.stop-filter .inp{
+  flex:0 0 auto;width:auto;min-width:0;
+  max-width:158px;                 /* uzun variant selectni cho'zib yubormasin */
+  padding:8px 9px;font-size:inherit;
+}
+.stop-filter .date-inp{flex:0 0 auto;min-width:118px;width:auto}
+.stop-filter .fl-lbl{color:var(--muted);flex:0 0 auto}
+.stop-filter .btn{padding:8px 12px;flex:0 0 auto;white-space:nowrap;font-size:inherit}
+
+/* Pagination */
+.pager{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
+.pager-info{color:var(--muted);font-size:13px}
+.pager-btns{display:flex;gap:4px;flex-wrap:wrap}
+.pg{min-width:34px;height:34px;padding:0 10px;display:grid;place-items:center;
+  border:1px solid var(--border);border-radius:9px;background:var(--card);
+  font-size:13px;font-weight:600;color:#475569}
+.pg:hover{border-color:#93c5fd;color:var(--blue)}
+.pg.cur{background:var(--blue);border-color:var(--blue);color:#fff}
+.pg.off,.pg.dots{opacity:.4;pointer-events:none}
+
+/* Xabar bannerlari */
+.flash{padding:12px 16px;border-radius:12px;margin-bottom:16px;font-size:14px;font-weight:500}
+.flash.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d}
+.flash.err{background:#fef2f2;border:1px solid #fecaca;color:#dc2626}
+
+/* Bo'sh holat */
+.stop-empty{display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:44px 20px;color:#94a3b8;text-align:center}
+.stop-empty b{color:#475569;font-size:15px}
+
+/* Detal sahifa: ma'lumot qatorlari */
+.info-rows{display:grid;gap:0}
+.info-row{display:grid;grid-template-columns:230px 1fr;gap:16px;padding:14px 0;
+  border-bottom:1px solid #f1f5f9}
+.info-row:last-child{border-bottom:none}
+.info-row .k{color:var(--muted);font-size:13px;font-weight:500}
+.info-row .v{font-size:14.5px;font-weight:600;color:var(--text);word-break:break-word}
+.info-row .v.muted{font-weight:400;color:#94a3b8}
+
+/* ============================================================
+   МАСШТАБИРОВАНИЕ — телефон → планшет → ноутбук → 4K / телевизор
+   ============================================================ */
+
+/* Jadval o'ralgan konteyner: joy yetmasa faqat jadval siljiydi,
+   sahifa gorizontal skroll bo'lmaydi */
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -2px;padding:0 2px}
+.tbl-wrap::-webkit-scrollbar{height:8px}
+.tbl-wrap::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+.stop-tbl{min-width:940px}                 /* ustunlar siqilib ketmasin */
+
+/* --- Katta monitor / televizor (≥1700px): kontent markazda, kengroq --- */
+@media(min-width:1700px){
+  .content{max-width:1880px;padding:32px 40px}
+  .stop-tbl td{padding:14px 16px}
+}
+@media(min-width:2200px){
+  .content{max-width:2280px;padding:38px 48px}
+  .stop-tbl{font-size:15.5px}
+  .stop-tbl .dish-cell{font-size:16px}
+  .stop-tbl thead th{font-size:12px}
+  .stop-tbl td{padding:16px 18px}
+  .reason-tag,.conf-tag{font-size:14px;padding:6px 14px}
+  .pg{min-width:40px;height:40px;font-size:14.5px}
+  .page-head h1{font-size:30px}
+}
+@media(min-width:3000px){          /* 4K televizor — uzoqdan o'qish uchun */
+  .content{max-width:2900px}
+  .stop-tbl{font-size:17px}
+  .stop-tbl .dish-cell{font-size:18px}
+  .stop-filter form{font-size:16px}
+  .page-head h1{font-size:34px}
+}
+
+/* --- Planshet va kichik noutbuk (761–1100px) --- */
+@media(max-width:1100px){
+  .stop-tbl td{padding:10px 11px}
+  .stop-tbl .dish-cell{font-size:13.5px}
+  .cmt-cell{max-width:190px;font-size:13px}
+  .stop-filter .inp{max-width:170px}
+}
+
+/* --- Telefon (≤760px): jadval kartochkaga aylanadi --- */
+@media(max-width:760px){
+  .stop-tbl{min-width:0}                  /* kartochka rejimida scroll shart emas */
+  .tbl-wrap{overflow-x:visible;margin:0}
+  .info-row{grid-template-columns:1fr;gap:4px;padding:10px 0}
+  .pager{flex-direction:column;align-items:stretch;gap:10px}
+  .pager-btns{justify-content:center}
+  .stop-tbl tbody tr td:first-child{border-left-width:4px;border-radius:12px 12px 0 0}
+  .stop-tbl tbody tr td:last-child{border-radius:0 0 12px 12px}
+  .stop-tbl tbody td{padding:8px 12px}
+  .cmt-cell{max-width:100%}
+  .stop-empty{padding:32px 14px}
+  /* mobil ustidagi «Открыть / Убрать» tugmalari qulay bo'lsin */
+  .stop-tbl tbody td .btn{padding:9px 14px}
+  .modal{max-height:88vh;overflow-y:auto}
+}
+@media(max-width:420px){
+  .page-head h1{font-size:19px}
+  .head-actions{flex-direction:column;align-items:stretch}
+  .head-actions .btn,.head-actions a{text-align:center;justify-content:center}
+}

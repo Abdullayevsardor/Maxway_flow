@@ -94,7 +94,7 @@
         <td data-label="Локация" style="color:#475569">📍 {{ b.location or "—" }}</td>
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
-            onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or "","phone":b.phone or "","director_name":b.director_name or "","login_email":branch_logins.get(b.id, "")}|tojson }})'>✏ Изменить</button>
+            onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or "","phone":b.phone or "","director_name":b.director_name or "","tg_chat_ids":b.tg_chat_ids or "","login_email":branch_logins.get(b.id, "")}|tojson }})'>✏ Изменить</button>
           <form method="post" action="/admin/branches/{{ b.id }}/delete" style="display:inline"
                 onsubmit="return confirm('Удалить филиал «{{ b.name }}»?')">
             <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
@@ -270,6 +270,8 @@
       <div class="field"><label>Локация (полный адрес)</label>
         <textarea name="location" placeholder="Ракатбаши махалля, Яккасарайский район, Ташкент, 100000, Узбекистан"></textarea></div>
       <div class="field"><label>Телефон</label><input type="text" name="phone" value="+998 "></div>
+      <div class="field"><label>Telegram ID сотрудников <span style="color:#94a3b8;font-weight:400">(через запятую — все получат комментарии и решения)</span></label>
+        <input type="text" name="tg_chat_ids" placeholder="123456789, 987654321"></div>
       <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px">
         <p style="font-weight:500;color:#475569;margin-bottom:10px;font-size:13px">🔑 Доступ для филиала (необязательно) — филиал видит только свои заявки</p>
         <div style="display:flex;gap:12px">
@@ -295,6 +297,8 @@
         <input type="text" name="director_name" id="b_director"></div>
       <div class="field"><label>Локация (полный адрес)</label><textarea name="location" id="b_location"></textarea></div>
       <div class="field"><label>Телефон</label><input type="text" name="phone" id="b_phone" placeholder="+998 90 123 45 67"></div>
+      <div class="field"><label>Telegram ID сотрудников <span style="color:#94a3b8;font-weight:400">(через запятую — все получат комментарии и решения)</span></label>
+        <input type="text" name="tg_chat_ids" id="b_tg_ids" placeholder="123456789, 987654321"></div>
       <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px">
         <p style="font-weight:500;color:#475569;margin-bottom:10px;font-size:13px">🔑 Доступ для филиала — логин филиала видит только свои заявки</p>
         <div style="display:flex;gap:12px">
@@ -384,6 +388,7 @@
     document.getElementById('b_director').value=d.director_name||'';
     document.getElementById('b_location').value=d.location||'';
     document.getElementById('b_phone').value=d.phone||'+998 ';
+    document.getElementById('b_tg_ids').value=d.tg_chat_ids||'';
     document.getElementById('b_login').value=d.login_email||'';
     document.getElementById('b_password').value='';
     open_('branchEdit');

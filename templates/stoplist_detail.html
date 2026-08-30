@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% import "_stop_parts.html" as sp %}
+{% block title %}Информация о стопе{% endblock %}
+{% block content %}
+
+{% set can_edit_any = can_edit_branch or can_edit_supply or can_confirm %}
+
+<div class="page-head">
+  <div>
+    <h1>🛑 Информация о стопе</h1>
+    <p><a href="{{ '/stoplist/history' if e.resolved else '/stoplist' }}" class="link-blue">← {{ 'К истории' if e.resolved else 'К стоп-листу' }}</a></p>
+  </div>
+  <div class="head-actions">
+    {% if can_edit_any %}<button class="btn btn-blue" onclick="openEdit()">✏ Изменить</button>{% endif %}
+    {% if can_resolve and not e.resolved %}
+    <form method="post" action="/stoplist/{{ e.id }}/resolve" style="margin:0"
+          onsubmit="return confirm('Убрать из стоп-листа?')">
+      <button type="submit" class="btn btn-light" style="color:var(--green);border-color:#86efac">✓ Убрать со стопа</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{{ sp.flash(ok_msg, err_msg) }}
+
+<div class="panel">
+  <div class="panel-head"><div class="title">
+    Запись №{{ e.id }}
+    <span class="badge">{{ 'Убрано со стопа' if e.resolved else 'На стопе' }}</span></div></div>
+  <div class="panel-body">
+    <div class="info-rows">
+      <div class="info-row"><div class="k">Дата</div>
+        <div class="v">{{ e.created_at.strftime('%d.%m.%Y %H:%M') if e.created_at else '—' }}</div></div>
+      <div class="info-row"><div class="k">Филиал</div>
+        <div class="v">{{ e.branch.name if e.branch else '—' }}
+          {% if e.branch and e.branch.location %}<div style="font-weight:400;color:#94a3b8;font-size:13px;margin-top:2px">📍 {{ e.branch.location }}</div>{% endif %}
+        </div></div>
+      <div class="info-row"><div class="k">Блюдо</div>
+        <div class="v">{{ e.menu_item.name if e.menu_item else '—' }}</div></div>
+      <div class="info-row"><div class="k">Причина</div>
+        <div class="v"><span class="reason-tag">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></div></div>
+      <div class="info-row"><div class="k">Комментарий филиала</div>
+        <div class="v {{ 'muted' if not e.comment }}">{{ e.comment or '—' }}</div></div>
+      <div class="info-row"><div class="k">Подтверждение причины стопа отделом снабжения</div>
+        <div class="v"><span class="conf-tag ro {{ 'yes' if e.supply_confirmed else 'no' }}">{{ confirm_label(e.supply_confirmed) }}</span>
+          {% if e.supply_confirmed and e.confirmed_at %}
+          <div style="font-weight:400;color:#94a3b8;font-size:13px;margin-top:5px">
+            {{ e.confirmed_at.strftime('%d.%m.%Y %H:%M') }}{% if e.confirmer %} · {{ e.confirmer.full_name }}{% endif %}
+          </div>
+          {% endif %}
+        </div></div>
+      <div class="info-row"><div class="k">Комментарий снабжения</div>
+        <div class="v {{ 'muted' if not e.supply_comment }}">{{ e.supply_comment or '—' }}</div></div>
+      <div class="info-row"><div class="k">Создал</div>
+        <div class="v {{ 'muted' if not e.creator }}">{{ e.creator.full_name if e.creator else '—' }}</div></div>
+      <div class="info-row"><div class="k">Изменено</div>
+        <div class="v {{ 'muted' if not e.updated_at }}">
+          {% if e.updated_at %}{{ e.updated_at.strftime('%d.%m.%Y %H:%M') }}{% if e.updater %} · {{ e.updater.full_name }}{% endif %}
+          {% else %}—{% endif %}
+        </div></div>
+      {% if e.resolved %}
+      <div class="info-row"><div class="k">Убрано со стопа</div>
+        <div class="v">{{ e.resolved_at.strftime('%d.%m.%Y %H:%M') if e.resolved_at else '—' }}</div></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if can_edit_any %}
+{# ===== Редактирование — только доступные пользователю поля ===== #}
+<div class="modal-bg" id="modal-edit">
+  <div class="modal" style="max-width:560px">
+    <h3>Изменить запись №{{ e.id }}</h3>
+    <form method="post" action="/stoplist/{{ e.id }}/edit" id="editForm">
+      {% set names = [] %}
+      {% if can_edit_branch %}
+        {% set _ = names.extend(['reason', 'branch_comment']) %}
+        <div class="field"><label>Причина <span style="color:#dc2626">*</span></label>
+          <select name="reason" class="inp" required>
+            {% for rk, rl in REASON_LABELS.items() %}
+            <option value="{{ rk }}" {{ 'selected' if e.reason == rk }}>{{ rl }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field"><label>Комментарий филиала</label>
+          <textarea name="branch_comment" class="inp" maxlength="1000"
+                    style="width:100%;min-height:62px;padding:10px">{{ e.comment or '' }}</textarea>
+        </div>
+      {% endif %}
+      {% if can_confirm %}
+        {% set _ = names.append('supply_confirmed') %}
+        <div class="field"><label>Подтверждение причины стопа отделом снабжения</label>
+          <select name="supply_confirmed" class="inp">
+            <option value="0" {{ 'selected' if not e.supply_confirmed }}>НЕТ</option>
+            <option value="1" {{ 'selected' if e.supply_confirmed }}>ДА</option>
+          </select>
+        </div>
+      {% endif %}
+      {% if can_edit_supply %}
+        {% set _ = names.append('supply_comment') %}
+        <div class="field"><label>Комментарий снабжения</label>
+          <textarea name="supply_comment" class="inp" maxlength="1000"
+                    style="width:100%;min-height:62px;padding:10px">{{ e.supply_comment or '' }}</textarea>
+        </div>
+      {% endif %}
+      <input type="hidden" name="fields" value="{{ names|join(',') }}">
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="closeEdit()">Отмена</button>
+        <button type="submit" class="btn btn-blue" id="editSubmit">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  function openEdit(){ document.getElementById('modal-edit').classList.add('open'); }
+  function closeEdit(){ document.getElementById('modal-edit').classList.remove('open'); }
+  document.getElementById('modal-edit').addEventListener('click', function(ev){
+    if(ev.target===this) closeEdit();
+  });
+  document.getElementById('editForm').addEventListener('submit', function(){
+    var b=document.getElementById('editSubmit');
+    b.disabled=true; b.textContent='Сохранение...';
+  });
+</script>
+{% endif %}
+
+{% endblock %}
