@@ -202,6 +202,23 @@ STATUS_LABELS = {
 }
 PRIORITY_LABELS = {"low": "Низкий", "medium": "Средний", "high": "Высокий"}
 ROLE_LABELS = {"admin": "АДМИН", "manager": "МЕНЕДЖЕР", "executor": "ИСПОЛНИТЕЛЬ", "client": "ЗАКАЗЧИК", "viewer": "ПРОСМОТР", "kpp": "КПП"}
+
+
+def _protected_emails() -> set:
+    """O'chirib bo'lmaydigan akkauntlar (bosh admin).
+    MAXWAY_PROTECTED_EMAILS env orqali o'zgartirish mumkin (vergul bilan)."""
+    raw = os.environ.get("MAXWAY_PROTECTED_EMAILS", "").strip()
+    if not raw:
+        raw = "a.ruzikulov@maxway.uz"
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def is_protected_user(u) -> bool:
+    """Shu foydalanuvchini hech bir admin o'chira olmaydi."""
+    return bool(u) and (u.email or "").lower() in _protected_emails()
+
+
+PROTECTED_EMAILS = _protected_emails()
 # Stop-list sabablari (spravochnik). Yangi yozuvlar shu ro'yxatdan tanlanadi.
 REASON_LABELS = {
     "equipment_broken": "Сломалось оборудование",
@@ -1434,10 +1451,12 @@ def admin_user_delete(uid: int, request: Request, db: Session = Depends(get_db))
     if p.id == user.id:
         return RedirectResponse("/admin?err=" + urllib.parse.quote(
             "Нельзя удалить самого себя"), 302)
+    if is_protected_user(p):
+        return RedirectResponse("/admin?err=" + urllib.parse.quote(
+            f"Аккаунт {p.email} защищён и не может быть удалён"), 302)
     name = p.full_name
-    # filial logini bo'lsa — filialni ham o'chiramiz (ikkalasi bir butun)
-    br = db.get(models.Branch, p.user_branch_id) \
-        if (p.role == Role.client and p.user_branch_id) else None
+    # filialga biriktirilgan bo'lsa — filialni ham o'chiramiz (ikkalasi bir butun)
+    br = db.get(models.Branch, p.user_branch_id) if p.user_branch_id else None
     br_name, br_stats = (br.name if br else None), {}
     if br:
         # o'sha filialning boshqa loginlari ham bor bo'lishi mumkin
@@ -1645,9 +1664,16 @@ def admin_branch_delete(bid: int, request: Request, db: Session = Depends(get_db
         return RedirectResponse("/admin", 302)
     name = b.name
     # Filial va uning logini bir butun — biri o'chsa, ikkinchisi ham o'chadi.
-    logins = db.query(models.User).filter(models.User.user_branch_id == bid).all()
+    all_logins = db.query(models.User).filter(models.User.user_branch_id == bid).all()
+    # himoyalangan akkaunt (bosh admin) hech qachon o'chmaydi — faqat uziladi
+    logins = [u for u in all_logins if not is_protected_user(u)]
+    kept = [u for u in all_logins if is_protected_user(u)]
     login_names = [u.email for u in logins]
     n_user_reqs = 0
+    if kept:
+        db.query(models.User).filter(models.User.id.in_([u.id for u in kept]))\
+            .update({models.User.user_branch_id: None}, synchronize_session=False)
+        db.flush()
     for u in logins:
         n_user_reqs += _purge_user(db, u)["reqs"]
     stats = _purge_branch(db, b)
@@ -1794,6 +1820,7 @@ def has_perm(user, key):
 
 # shablonlarда `can(user, 'create_request')` sifatida ishlatiladi
 templates.env.globals["can"] = has_perm
+templates.env.globals["is_protected_user"] = is_protected_user
 templates.env.globals["PERMISSION_DEFS"] = PERMISSION_DEFS
 
 

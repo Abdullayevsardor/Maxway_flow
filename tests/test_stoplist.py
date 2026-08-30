@@ -883,3 +883,74 @@ def test_admin_cannot_delete_self(client, seed, db):
     assert r.status_code == 302 and "err=" in r.headers["location"]
     db.expire_all()
     assert db.get(models.User, seed["admin"].id) is not None
+
+
+# ================= HIMOYALANGAN AKKAUNT =================
+def test_protected_admin_cannot_be_deleted(client, seed, db, monkeypatch):
+    """Bosh adminni boshqa admin ham o'chira olmaydi."""
+    import main
+    from app import auth as _auth
+    boss = models.User(full_name="Главный", email="a.ruzikulov@maxway.uz",
+                       hashed_password=_auth.hash_password("test12345"),
+                       role=models.Role.admin, is_active=True)
+    db.add(boss); db.commit()
+    bid = boss.id
+    assert main.is_protected_user(boss) is True
+
+    login(client, seed["admin"])          # boshqa admin
+    r = client.post(f"/admin/users/{bid}/delete", follow_redirects=False)
+    assert r.status_code == 302
+    assert "err=" in r.headers["location"]
+    db.expire_all()
+    assert db.get(models.User, bid) is not None, "himoyalangan akkaunt o'chib ketdi"
+
+
+def test_protected_list_is_configurable(monkeypatch):
+    import main
+    monkeypatch.setenv("MAXWAY_PROTECTED_EMAILS", "boss@x.uz, second@x.uz")
+
+    class U:
+        def __init__(self, e): self.email = e
+    assert main.is_protected_user(U("boss@x.uz")) is True
+    assert main.is_protected_user(U("SECOND@X.UZ")) is True       # registr muhim emas
+    assert main.is_protected_user(U("a.ruzikulov@maxway.uz")) is False
+    assert main.is_protected_user(None) is False
+
+
+def test_protected_user_survives_branch_delete(client, seed, db, monkeypatch):
+    """Himoyalangan akkaunt filialga biriktirilgan bo'lsa ham o'chmaydi."""
+    import main
+    from app import auth as _auth
+    monkeypatch.setenv("MAXWAY_PROTECTED_EMAILS", "keepme@x.uz")
+    b = models.Branch(name="Филиал с боссом"); db.add(b); db.flush()
+    boss = models.User(full_name="boss", email="keepme@x.uz",
+                       hashed_password=_auth.hash_password("test12345"),
+                       role=models.Role.client, user_branch_id=b.id, is_active=True)
+    db.add(boss); db.commit()
+    bid, uid = b.id, boss.id
+
+    login(client, seed["admin"])
+    assert client.post(f"/admin/branches/{bid}/delete",
+                       follow_redirects=False).status_code == 302
+    db.expire_all()
+    assert db.get(models.Branch, bid) is None        # filial o'chdi
+    u = db.get(models.User, uid)
+    assert u is not None, "himoyalangan akkaunt filial bilan birga o'chib ketdi"
+    assert u.user_branch_id is None                  # faqat uzildi
+
+
+def test_any_branch_linked_user_deletes_branch(client, seed, db):
+    """Roli client bo'lmasa ham, filialga biriktirilgan bo'lsa — filial ham o'chadi."""
+    from app import auth as _auth
+    b = models.Branch(name="Филиал менеджера"); db.add(b); db.flush()
+    u = models.User(full_name="mgr", email="mgr-branch@t.uz",
+                    hashed_password=_auth.hash_password("test12345"),
+                    role=models.Role.manager, user_branch_id=b.id, is_active=True)
+    db.add(u); db.commit()
+    bid, uid = b.id, u.id
+    login(client, seed["admin"])
+    assert client.post(f"/admin/users/{uid}/delete",
+                       follow_redirects=False).status_code == 302
+    db.expire_all()
+    assert db.get(models.User, uid) is None
+    assert db.get(models.Branch, bid) is None

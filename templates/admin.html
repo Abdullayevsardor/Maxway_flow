@@ -30,7 +30,10 @@
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
             onclick='editUser({{ {"id":u.id,"full_name":u.full_name,"email":u.email,"role":u.role.value,"department_id":u.department_id or "","phone":u.phone or "","telegram_chat_id":u.telegram_chat_id or "","kpp_branch_ids":u.visible_branches|map(attribute="id")|list}|tojson }}, { {% for k,l,s in PERMISSION_DEFS %}{{ k|tojson }}: {{ can(u,k)|tojson }}{{ "," if not loop.last }}{% endfor %} })'>✏ Изменить</button>
-          {% if u.id != user.id %}
+          {% if is_protected_user(u) %}
+          <span class="btn btn-light" style="padding:7px 12px;color:#94a3b8;cursor:default"
+                title="Главный администратор — удаление запрещено">Защищён</span>
+          {% elif u.id != user.id %}
           <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline"
                 onsubmit="return confirm('Удалить «{{ u.full_name }}»?\n\n'
                   {% set c = req_counts.get(u.id, 0) %}
@@ -110,17 +113,13 @@
             onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or "","phone":b.phone or "","director_name":b.director_name or "","tg_chat_ids":b.tg_chat_ids or "","login_email":branch_logins.get(b.id, "")}|tojson }})'>✏ Изменить</button>
           {% set st = branch_stats.get(b.id, {}) %}
           <form method="post" action="/admin/branches/{{ b.id }}/delete" style="display:inline"
-                onsubmit="return confirm('Удалить филиал «{{ b.name }}»?
-
-'
-                  + '• Заявки ({{ st.get('reqs', 0) }}) сохранятся — название филиала останется текстом
-'
-                  + '• Записи стоп-листа ({{ st.get('stops', 0) }}) будут УДАЛЕНЫ безвозвратно
-'
-                  + '• Логин филиала{% if branch_logins.get(b.id) %} ({{ branch_logins[b.id] }}){% endif %} будет УДАЛЁН вместе с его заявками
-
-'
-                  + 'Продолжить?')">
+                onsubmit="return confirm('Удалить филиал «{{ b.name }}»?\n\n'
+                  + '• Заявки ({{ st.get('reqs', 0) }}) сохранятся — название останется текстом\n'
+                  + '• Записи стоп-листа ({{ st.get('stops', 0) }}) будут УДАЛЕНЫ безвозвратно\n'
+                  {% if branch_logins.get(b.id) %}
+                  + '• Логин {{ branch_logins[b.id] }} будет УДАЛЁН вместе с его заявками\n'
+                  {% endif %}
+                  + '\nПродолжить?')">
             <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
           </form>
         </td>
