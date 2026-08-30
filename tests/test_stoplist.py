@@ -775,3 +775,63 @@ def test_branch_cannot_resolve_other_branch_single(client, seed, db, fresh_dish)
     assert client.post(f"/stoplist/{other}/resolve").status_code == 403
     login(client, seed["admin"])
     assert client.get(f"/api/product-stops/{other}").json()["resolved"] is False
+
+
+# ================= FILIALNI O'CHIRISH =================
+def test_branch_delete_cleans_up_everything(client, seed, db, fresh_dish, monkeypatch):
+    """Filial o'chirilganda: zayavka saqlanadi, stop o'chadi, login uziladi."""
+    import main
+    from app import auth as _auth
+    monkeypatch.setattr(main, "get_stop_channel", lambda: "")
+
+    b = models.Branch(name="Удаляемый филиал")
+    db.add(b); db.flush()
+    cli = models.User(full_name="del-login", email="del-login@t.uz",
+                      hashed_password=_auth.hash_password("test12345"),
+                      role=models.Role.client, user_branch_id=b.id, is_active=True)
+    db.add(cli); db.flush()
+    dep = db.query(models.Department).first()
+    req = models.Request(title="Заявка филиала", department_id=dep.id,
+                         created_by=cli.id, branch_id=b.id)
+    db.add(req); db.flush()
+    kpp = models.User(full_name="kpp-del", email="kpp-del@t.uz",
+                      hashed_password=_auth.hash_password("test12345"),
+                      role=models.Role.kpp, is_active=True)
+    kpp.visible_branches = [b]
+    db.add(kpp); db.commit()
+    bid, rid, cid = b.id, req.id, cli.id
+
+    login(client, seed["admin"])
+    client.post("/api/product-stops", json={
+        "product_ids": [fresh_dish(), fresh_dish()], "reason": "wrong_order",
+        "branch_id": bid})
+    assert db.query(models.StopEntry).filter(models.StopEntry.branch_id == bid).count() == 2
+
+    r = client.post(f"/admin/branches/{bid}/delete", follow_redirects=False)
+    assert r.status_code == 302, r.text
+    db.expire_all()
+
+    # filial o'chdi
+    assert db.get(models.Branch, bid) is None
+    # stop yozuvlari o'chdi — yetim qolmadi
+    assert db.query(models.StopEntry).filter(models.StopEntry.branch_id == bid).count() == 0
+    # zayavka saqlandi, filial nomi matn sifatida qoldi
+    saved = db.get(models.Request, rid)
+    assert saved is not None
+    assert saved.branch_id is None
+    assert saved.branch == "Удаляемый филиал"
+    # login o'chirilmadi, faqat uzildi va nofaol bo'ldi
+    u = db.get(models.User, cid)
+    assert u is not None and u.user_branch_id is None and u.is_active is False
+    # КПП bog'lanishi tozalandi
+    db.refresh(kpp)
+    assert [x.id for x in kpp.visible_branches] == []
+
+
+def test_branch_delete_is_admin_only(client, seed, db):
+    b = models.Branch(name="Чужой филиал")
+    db.add(b); db.commit()
+    login(client, seed["branch"])
+    assert client.post(f"/admin/branches/{b.id}/delete",
+                       follow_redirects=False).status_code == 302
+    assert db.get(models.Branch, b.id) is not None      # o'chmagan

@@ -102,8 +102,19 @@
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
             onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or "","phone":b.phone or "","director_name":b.director_name or "","tg_chat_ids":b.tg_chat_ids or "","login_email":branch_logins.get(b.id, "")}|tojson }})'>✏ Изменить</button>
+          {% set st = branch_stats.get(b.id, {}) %}
           <form method="post" action="/admin/branches/{{ b.id }}/delete" style="display:inline"
-                onsubmit="return confirm('Удалить филиал «{{ b.name }}»?')">
+                onsubmit="return confirm('Удалить филиал «{{ b.name }}»?
+
+'
+                  + '• Заявки ({{ st.get('reqs', 0) }}) сохранятся — название филиала останется текстом
+'
+                  + '• Записи стоп-листа ({{ st.get('stops', 0) }}) будут УДАЛЕНЫ безвозвратно
+'
+                  + '• Логин филиала{% if branch_logins.get(b.id) %} ({{ branch_logins[b.id] }}){% endif %} будет отключён
+
+'
+                  + 'Продолжить?')">
             <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
           </form>
         </td>

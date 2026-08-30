@@ -1307,12 +1307,21 @@ def admin_page(request: Request, ok: str = "", err: str = "",
     branch_logins = dict(db.query(models.User.user_branch_id, models.User.email)
                          .filter(models.User.role == Role.client,
                                  models.User.user_branch_id.isnot(None)).all())
+    # o'chirishdan oldin ogohlantirish uchun: har filialda nechta yozuv bor
+    branch_stats = {}
+    for bid_, cnt in db.query(models.StopEntry.branch_id,
+                              _func.count(models.StopEntry.id))            .group_by(models.StopEntry.branch_id).all():
+        branch_stats.setdefault(bid_, {})["stops"] = cnt
+    for bid_, cnt in db.query(models.Request.branch_id,
+                              _func.count(models.Request.id))            .filter(models.Request.branch_id.isnot(None))            .group_by(models.Request.branch_id).all():
+        branch_stats.setdefault(bid_, {})["reqs"] = cnt
     return templates.TemplateResponse(request, "admin.html", {
         "request": request, "user": user, "active": "admin",
         "users": db.query(models.User).order_by(models.User.full_name).all(),
         "departments": db.query(models.Department).all(),
         "branches": db.query(models.Branch).order_by(models.Branch.name).all(),
         "req_counts": req_counts, "branch_logins": branch_logins,
+        "branch_stats": branch_stats,
         "ok_msg": ok, "err_msg": err,
     })
 
@@ -1559,11 +1568,40 @@ def admin_branch_delete(bid: int, request: Request, db: Session = Depends(get_db
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
     b = db.get(models.Branch, bid)
-    if b:
-        db.query(models.Request).filter(models.Request.branch_id == bid)\
-            .update({models.Request.branch_id: None})
-        db.delete(b); db.commit()
-    return RedirectResponse("/admin", 302)
+    if not b:
+        return RedirectResponse("/admin", 302)
+    name = b.name
+    # Bog'liq ma'lumotlarni ANIQ tartibda uzamiz.
+    # (Aks holda: Postgres'da tashqi kalit xatosi, SQLite'da esa yetim yozuvlar.)
+
+    # 1) Zayavkalar saqlanadi — filial nomi matn sifatida qoladi, tarix yo'qolmaydi
+    n_req = db.query(models.Request).filter(models.Request.branch_id == bid).count()
+    db.query(models.Request).filter(models.Request.branch_id == bid).update(
+        {models.Request.branch_id: None, models.Request.branch: name},
+        synchronize_session=False)
+
+    # 2) Stop yozuvlari o'chiriladi — filialsiz ma'nosi yo'q (branch_id majburiy maydon)
+    n_stop = db.query(models.StopEntry).filter(models.StopEntry.branch_id == bid).count()
+    db.query(models.StopEntry).filter(models.StopEntry.branch_id == bid)\
+        .delete(synchronize_session=False)
+
+    # 3) Filial logini O'CHIRILMAYDI — u yaratgan zayavka/izohlar buzilmasin.
+    #    Faqat filialdan uziladi va nofaol qilinadi (kirolmaydi).
+    n_user = db.query(models.User).filter(models.User.user_branch_id == bid).count()
+    db.query(models.User).filter(models.User.user_branch_id == bid).update(
+        {models.User.user_branch_id: None, models.User.is_active: False},
+        synchronize_session=False)
+
+    # 4) КПП ko'rinish bog'lanishlari
+    db.execute(models.kpp_branches.delete().where(
+        models.kpp_branches.c.branch_id == bid))
+
+    db.delete(b)
+    db.commit()
+    msg = (f"Филиал «{name}» удалён. Заявок сохранено: {n_req}; "
+           f"записей стоп-листа удалено: {n_stop}; "
+           f"логинов отключено: {n_user}.")
+    return RedirectResponse("/admin?ok=" + urllib.parse.quote(msg), 302)
 
 
 @app.post("/admin/branches/{bid}/edit")
