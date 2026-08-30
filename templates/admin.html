@@ -5,6 +5,9 @@
   <div><h1>Админ панель</h1><p>Управление пользователями, категориями и филиалами</p></div>
 </div>
 
+{% if err_msg %}<div class="flash err">{{ err_msg }}</div>{% endif %}
+{% if ok_msg %}<div class="flash ok">{{ ok_msg }}</div>{% endif %}
+
 <!-- FOYDALANUVCHILAR -->
 <div class="panel">
   <div class="panel-head">
@@ -79,19 +82,23 @@
 <div class="panel">
   <div class="panel-head">
     <div class="title">📍 Филиалы <span class="badge">{{ branches|length }}</span></div>
-    <button class="btn btn-blue" onclick="open_('branch')">＋ Добавить филиал</button>
+    <button class="btn btn-blue" onclick="openBranchCreate()">＋ Добавить филиал</button>
   </div>
   <table>
     <thead><tr><th colspan="3" style="padding:10px 12px">
       <input type="text" id="branchSearch" class="inp" placeholder="🔍 Поиск филиала (название, адрес)..."
              oninput="filterRows(this,'branchRows')" style="width:100%;max-width:420px">
     </th></tr>
-    <tr><th>Название</th><th>Локация (адрес)</th><th></th></tr></thead>
+    <tr><th>Название</th><th>Локация (адрес)</th><th>Логин филиала</th><th></th></tr></thead>
     <tbody id="branchRows">
       {% for b in branches %}
       <tr>
         <td data-label="Название"><b>{{ b.name }}</b></td>
         <td data-label="Локация" style="color:#475569">📍 {{ b.location or "—" }}</td>
+        <td data-label="Логин филиала">
+          {% if branch_logins.get(b.id) %}<span style="color:#334155">{{ branch_logins[b.id] }}</span>
+          {% else %}<span style="color:#dc2626;font-weight:600">нет логина</span>{% endif %}
+        </td>
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
             onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or "","phone":b.phone or "","director_name":b.director_name or "","tg_chat_ids":b.tg_chat_ids or "","login_email":branch_logins.get(b.id, "")}|tojson }})'>✏ Изменить</button>
@@ -101,7 +108,7 @@
           </form>
         </td>
       </tr>
-      {% else %}<tr><td colspan="3" class="empty">Филиалы не добавлены</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="4" class="empty">Филиалы не добавлены</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>
@@ -263,7 +270,7 @@
 <div class="modal-bg" id="modal-branch">
   <div class="modal">
     <h3>Добавить филиал</h3>
-    <form method="post" action="/admin/branches/create">
+    <form method="post" action="/admin/branches/create" id="branchCreateForm" autocomplete="off">
       <div class="field"><label>Название / код</label><input type="text" name="name" required placeholder="MW06-NEXT"></div>
       <div class="field"><label>Имя директора <span style="color:#94a3b8;font-weight:400">(будет указан как заказчик)</span></label>
         <input type="text" name="director_name" placeholder="Напр. Алишер Каримов"></div>
@@ -275,8 +282,12 @@
       <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px">
         <p style="font-weight:500;color:#475569;margin-bottom:10px;font-size:13px">🔑 Доступ для филиала (необязательно) — филиал видит только свои заявки</p>
         <div style="display:flex;gap:12px">
-          <div class="field" style="flex:1"><label>Email (логин)</label><input type="email" name="login_email" placeholder="branch@maxway.uz"></div>
-          <div class="field" style="flex:1"><label>Пароль</label><input type="text" name="password" placeholder="12345678"></div>
+          <div class="field" style="flex:1"><label>Email (логин)</label>
+            <input type="email" name="login_email" placeholder="branch@maxway.uz"
+                   autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"></div>
+          <div class="field" style="flex:1"><label>Пароль</label>
+            <input type="text" name="password" placeholder="12345678"
+                   autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')"></div>
         </div>
       </div>
       <div class="modal-actions">
@@ -291,7 +302,7 @@
 <div class="modal-bg" id="modal-branchEdit">
   <div class="modal">
     <h3>Изменить филиал</h3>
-    <form method="post" id="branchEditForm">
+    <form method="post" id="branchEditForm" autocomplete="off">
       <div class="field"><label>Название / код</label><input type="text" name="name" id="b_name" required></div>
       <div class="field"><label>Имя директора <span style="color:#94a3b8;font-weight:400">(заказчик)</span></label>
         <input type="text" name="director_name" id="b_director"></div>
@@ -302,8 +313,11 @@
       <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px">
         <p style="font-weight:500;color:#475569;margin-bottom:10px;font-size:13px">🔑 Доступ для филиала — логин филиала видит только свои заявки</p>
         <div style="display:flex;gap:12px">
-          <div class="field" style="flex:1"><label>Email (логин)</label><input type="email" name="login_email" id="b_login" placeholder="branch@maxway.uz"></div>
-          <div class="field" style="flex:1"><label>Новый пароль <span style="color:#94a3b8;font-weight:400">(пусто — не менять)</span></label><input type="text" name="password" id="b_password" placeholder="••••••••"></div>
+          <div class="field" style="flex:1"><label>Email (логин)</label>
+            <input type="email" name="login_email" id="b_login" placeholder="branch@maxway.uz"
+                   autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"></div>
+          <div class="field" style="flex:1"><label>Новый пароль <span style="color:#94a3b8;font-weight:400">(пусто — не менять)</span></label><input type="text" name="password" id="b_password" placeholder="••••••••"
+                   autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')"></div>
         </div>
       </div>
       <div class="modal-actions">
@@ -341,6 +355,15 @@
     });
   });
   function open_(n){document.getElementById('modal-'+n).classList.add('open')}
+  // filial qo'shish oynasi har safar TOZA ochiladi (brauzer avtoto'ldirishi bekor qilinadi)
+  function openBranchCreate(){
+    var f=document.getElementById('branchCreateForm');
+    f.reset();
+    f.login_email.value=''; f.password.value=''; f.tg_chat_ids.value='';
+    f.phone.value='+998 ';
+    open_('branch');
+    setTimeout(function(){ f.login_email.value=''; f.password.value=''; }, 60);
+  }
   function close_(n){document.getElementById('modal-'+n).classList.remove('open')}
   document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
 

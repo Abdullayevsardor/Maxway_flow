@@ -1293,7 +1293,8 @@ def departments_delete(dep_id: int, request: Request, db: Session = Depends(get_
 
 # ===================== ADMIN PANEL =====================
 @app.get("/admin", response_class=HTMLResponse)
-def admin_page(request: Request, db: Session = Depends(get_db)):
+def admin_page(request: Request, ok: str = "", err: str = "",
+               db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
@@ -1312,6 +1313,7 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
         "departments": db.query(models.Department).all(),
         "branches": db.query(models.Branch).order_by(models.Branch.name).all(),
         "req_counts": req_counts, "branch_logins": branch_logins,
+        "ok_msg": ok, "err_msg": err,
     })
 
 
@@ -1532,12 +1534,23 @@ def admin_branch_create(request: Request, name: str = Form(...), location: str =
     db.add(b); db.flush()
     # filial uchun login (klient) yaratish
     login_email = login_email.lower().strip()
-    if login_email and not db.query(models.User).filter(models.User.email == login_email).first():
-        db.add(models.User(full_name=name.strip(), email=login_email,
-                           hashed_password=auth.hash_password(password or "12345678"),
-                           role=Role.client, user_branch_id=b.id, is_active=True))
+    warn = ""
+    if login_email:
+        busy = db.query(models.User).filter(models.User.email == login_email).first()
+        if busy:
+            # jimgina o'tkazib yubormaymiz — admin buni bilishi kerak
+            warn = (f"Филиал «{b.name}» создан, но логин НЕ создан: "
+                    f"email {login_email} уже занят ({busy.full_name}). "
+                    f"Задайте другой email в «Изменить филиал».")
+        else:
+            db.add(models.User(full_name=name.strip(), email=login_email,
+                               hashed_password=auth.hash_password(password or "12345678"),
+                               role=Role.client, user_branch_id=b.id, is_active=True))
     db.commit()
-    return RedirectResponse("/admin", 302)
+    if warn:
+        return RedirectResponse("/admin?err=" + urllib.parse.quote(warn), 302)
+    return RedirectResponse("/admin?ok=" + urllib.parse.quote(
+        f"Филиал «{b.name}» добавлен"), 302)
 
 
 @app.post("/admin/branches/{bid}/delete")
@@ -1588,6 +1601,11 @@ def admin_branch_edit(bid: int, request: Request, name: str = Form(...),
                 db.add(models.User(full_name=b.name, email=login_email,
                                    hashed_password=auth.hash_password(password.strip() or "12345678"),
                                    role=Role.client, user_branch_id=bid, is_active=True))
+            if taken:
+                db.commit()
+                return RedirectResponse("/admin?err=" + urllib.parse.quote(
+                    f"Email {login_email} уже занят ({taken.full_name}) — "
+                    f"логин филиала «{b.name}» не изменён."), 302)
         elif client and password.strip():
             # email o'zgarmasa ham — faqat parol yangilash
             client.hashed_password = auth.hash_password(password.strip())
