@@ -815,14 +815,10 @@ def test_branch_delete_cleans_up_everything(client, seed, db, fresh_dish, monkey
     assert db.get(models.Branch, bid) is None
     # stop yozuvlari o'chdi — yetim qolmadi
     assert db.query(models.StopEntry).filter(models.StopEntry.branch_id == bid).count() == 0
-    # zayavka saqlandi, filial nomi matn sifatida qoldi
-    saved = db.get(models.Request, rid)
-    assert saved is not None
-    assert saved.branch_id is None
-    assert saved.branch == "Удаляемый филиал"
-    # login o'chirilmadi, faqat uzildi va nofaol bo'ldi
-    u = db.get(models.User, cid)
-    assert u is not None and u.user_branch_id is None and u.is_active is False
+    # zayavkani filial logini yaratgan edi — login bilan birga o'chadi
+    assert db.get(models.Request, rid) is None
+    # filial logini ham o'chdi (filial va login bir butun)
+    assert db.get(models.User, cid) is None
     # КПП bog'lanishi tozalandi
     db.refresh(kpp)
     assert [x.id for x in kpp.visible_branches] == []
@@ -835,3 +831,55 @@ def test_branch_delete_is_admin_only(client, seed, db):
     assert client.post(f"/admin/branches/{b.id}/delete",
                        follow_redirects=False).status_code == 302
     assert db.get(models.Branch, b.id) is not None      # o'chmagan
+
+
+def test_delete_user_also_deletes_its_branch(client, seed, db, fresh_dish):
+    """Пользователи qismidan filial loginini o'chirsa — filial ham o'chadi (500 emas)."""
+    from app import auth as _auth
+    b = models.Branch(name="Парный филиал")
+    db.add(b); db.flush()
+    cli = models.User(full_name="pair-login", email="pair@t.uz",
+                      hashed_password=_auth.hash_password("test12345"),
+                      role=models.Role.client, user_branch_id=b.id, is_active=True)
+    db.add(cli); db.commit()
+    bid, uid = b.id, cli.id
+
+    # filial loginidan stop qo'shamiz — aynan shu 500 xatoga sabab bo'lardi
+    login(client, cli)
+    r = client.post("/api/product-stops", json={
+        "product_ids": [fresh_dish()], "reason": "wrong_order"})
+    assert r.status_code == 201, r.text
+
+    login(client, seed["admin"])
+    resp = client.post(f"/admin/users/{uid}/delete", follow_redirects=False)
+    assert resp.status_code == 302, f"500 qaytdi: {resp.status_code}"
+    db.expire_all()
+    assert db.get(models.User, uid) is None          # login o'chdi
+    assert db.get(models.Branch, bid) is None        # filial ham o'chdi
+    assert db.query(models.StopEntry).filter(
+        models.StopEntry.branch_id == bid).count() == 0
+
+
+def test_delete_ordinary_user_keeps_branches(client, seed, db):
+    """Oddiy xodimni o'chirish filiallarга tegmaydi."""
+    from app import auth as _auth
+    u = models.User(full_name="обычный", email="ordinary@t.uz",
+                    hashed_password=_auth.hash_password("test12345"),
+                    role=models.Role.executor, is_active=True)
+    db.add(u); db.commit()
+    uid = u.id
+    before = db.query(models.Branch).count()
+    login(client, seed["admin"])
+    assert client.post(f"/admin/users/{uid}/delete",
+                       follow_redirects=False).status_code == 302
+    db.expire_all()
+    assert db.get(models.User, uid) is None
+    assert db.query(models.Branch).count() == before
+
+
+def test_admin_cannot_delete_self(client, seed, db):
+    login(client, seed["admin"])
+    r = client.post(f"/admin/users/{seed['admin'].id}/delete", follow_redirects=False)
+    assert r.status_code == 302 and "err=" in r.headers["location"]
+    db.expire_all()
+    assert db.get(models.User, seed["admin"].id) is not None

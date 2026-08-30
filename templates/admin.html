@@ -32,7 +32,13 @@
             onclick='editUser({{ {"id":u.id,"full_name":u.full_name,"email":u.email,"role":u.role.value,"department_id":u.department_id or "","phone":u.phone or "","telegram_chat_id":u.telegram_chat_id or "","kpp_branch_ids":u.visible_branches|map(attribute="id")|list}|tojson }}, { {% for k,l,s in PERMISSION_DEFS %}{{ k|tojson }}: {{ can(u,k)|tojson }}{{ "," if not loop.last }}{% endfor %} })'>✏ Изменить</button>
           {% if u.id != user.id %}
           <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline"
-                onsubmit="return confirm({% set c = req_counts.get(u.id, 0) %}{% if c %}'⚠️ У «{{ u.full_name }}» есть {{ c }} заявок(и). При удалении пользователя ВСЕ его заявки будут удалены безвозвратно!\n\nВсё равно удалить?'{% else %}'Удалить «{{ u.full_name }}»?'{% endif %})">
+                onsubmit="return confirm('Удалить «{{ u.full_name }}»?\n\n'
+                  {% set c = req_counts.get(u.id, 0) %}
+                  {% if c %}+ '• Его заявки ({{ c }}) будут удалены безвозвратно\n'{% endif %}
+                  {% if u.role.value == 'client' and u.branch %}
+                  + '• Вместе с ним будет удалён филиал «{{ u.branch.name }}» и весь его стоп-лист\n'
+                  {% endif %}
+                  + '\nПродолжить?')">
             <button class="btn btn-light" style="color:#dc2626;border-color:#fecaca;padding:7px 12px">Удалить</button>
           </form>
           {% endif %}
@@ -111,7 +117,7 @@
 '
                   + '• Записи стоп-листа ({{ st.get('stops', 0) }}) будут УДАЛЕНЫ безвозвратно
 '
-                  + '• Логин филиала{% if branch_logins.get(b.id) %} ({{ branch_logins[b.id] }}){% endif %} будет отключён
+                  + '• Логин филиала{% if branch_logins.get(b.id) %} ({{ branch_logins[b.id] }}){% endif %} будет УДАЛЁН вместе с его заявками
 
 '
                   + 'Продолжить?')">

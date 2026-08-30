@@ -1356,37 +1356,110 @@ def admin_user_create(request: Request, full_name: str = Form(...), email: str =
     return RedirectResponse("/admin", 302)
 
 
+def _purge_user(db: Session, p) -> dict:
+    """Foydalanuvchini va unga bog'liq barcha ishoralarni tozalaydi.
+    Commit QILMAYDI — chaqiruvchi commit qiladi."""
+    uid = p.id
+    stats = {"reqs": 0, "comments": 0}
+    # ijrochi bo'lgan zayavkalar bo'shatiladi
+    db.query(models.Request).filter(models.Request.assigned_to == uid)\
+        .update({models.Request.assigned_to: None}, synchronize_session=False)
+    # ko'p-ko'p bog'lanishlar (SQLite'da CASCADE ishlamaydi — qo'lda tozalaymiz)
+    db.execute(models.request_assignees.delete().where(
+        models.request_assignees.c.user_id == uid))
+    db.execute(models.kpp_branches.delete().where(
+        models.kpp_branches.c.user_id == uid))
+    # stop-list yozuvlaridagi ishoralar bo'shatiladi (yozuvlar saqlanadi)
+    for col in (models.StopEntry.created_by, models.StopEntry.updated_by,
+                models.StopEntry.confirmed_by):
+        db.query(models.StopEntry).filter(col == uid)\
+            .update({col: None}, synchronize_session=False)
+    # yaratgan zayavkalari (izoh/tarix/fayllari bilan) o'chiriladi
+    reqs = db.query(models.Request).filter(models.Request.created_by == uid).all()
+    stats["reqs"] = len(reqs)
+    for r in reqs:
+        for att in r.attachments:
+            try:
+                fp = att.file_path.lstrip("/")
+                if os.path.exists(fp):
+                    os.remove(fp)
+            except Exception:
+                pass
+        db.execute(models.request_assignees.delete().where(
+            models.request_assignees.c.request_id == r.id))
+        db.query(models.Notification).filter(
+            models.Notification.link == f"/requests/{r.id}").delete(synchronize_session=False)
+        db.delete(r)
+    stats["comments"] = db.query(models.Comment).filter(models.Comment.user_id == uid).count()
+    db.query(models.Comment).filter(models.Comment.user_id == uid)\
+        .delete(synchronize_session=False)
+    db.query(models.Notification).filter(models.Notification.user_id == uid)\
+        .delete(synchronize_session=False)
+    db.flush()
+    db.delete(p)
+    return stats
+
+
+def _purge_branch(db: Session, b) -> dict:
+    """Filialni va unga bog'liq ma'lumotlarni tozalaydi (loginlaridan tashqari).
+    Commit QILMAYDI."""
+    bid, name = b.id, b.name
+    stats = {"reqs": 0, "stops": 0}
+    # zayavkalar saqlanadi — filial nomi matn sifatida qoladi
+    stats["reqs"] = db.query(models.Request).filter(models.Request.branch_id == bid).count()
+    db.query(models.Request).filter(models.Request.branch_id == bid).update(
+        {models.Request.branch_id: None, models.Request.branch: name},
+        synchronize_session=False)
+    # stop yozuvlari — filialsiz saqlab bo'lmaydi (branch_id majburiy)
+    stats["stops"] = db.query(models.StopEntry).filter(models.StopEntry.branch_id == bid).count()
+    db.query(models.StopEntry).filter(models.StopEntry.branch_id == bid)\
+        .delete(synchronize_session=False)
+    # КПП ko'rinish bog'lanishlari
+    db.execute(models.kpp_branches.delete().where(
+        models.kpp_branches.c.branch_id == bid))
+    db.flush()
+    db.delete(b)
+    return stats
+
+
 @app.post("/admin/users/{uid}/delete")
 def admin_user_delete(uid: int, request: Request, db: Session = Depends(get_db)):
+    """Foydalanuvchini o'chirish. Agar u filial logini bo'lsa — filial ham o'chadi."""
     user = current_user(request, db)
     if not user or user.role != Role.admin:
         return RedirectResponse("/login", 302)
     p = db.get(models.User, uid)
-    if p and p.id != user.id:
-        # bu odam ijrochi bo'lgan заявкаларни bo'shatamiz
-        db.query(models.Request).filter(models.Request.assigned_to == uid)\
-            .update({models.Request.assigned_to: None}, synchronize_session=False)
-        # bu odam yaratgan заявкаларni birma-bir o'chiramiz (cascade: izoh/tarix/fayl)
-        reqs = db.query(models.Request).filter(models.Request.created_by == uid).all()
-        for r in reqs:
-            for att in r.attachments:
-                try:
-                    fp = att.file_path.lstrip("/")
-                    if os.path.exists(fp):
-                        os.remove(fp)
-                except Exception:
-                    pass
-            db.query(models.Notification).filter(
-                models.Notification.link == f"/requests/{r.id}").delete(synchronize_session=False)
-            db.delete(r)
-        # bu odamning izohlari va bildirishnomalarini o'chiramiz
-        db.query(models.Comment).filter(models.Comment.user_id == uid)\
-            .delete(synchronize_session=False)
-        db.query(models.Notification).filter(models.Notification.user_id == uid)\
-            .delete(synchronize_session=False)
-        db.delete(p)
-        db.commit()
-    return RedirectResponse("/admin", 302)
+    if not p:
+        return RedirectResponse("/admin", 302)
+    if p.id == user.id:
+        return RedirectResponse("/admin?err=" + urllib.parse.quote(
+            "Нельзя удалить самого себя"), 302)
+    name = p.full_name
+    # filial logini bo'lsa — filialni ham o'chiramiz (ikkalasi bir butun)
+    br = db.get(models.Branch, p.user_branch_id) \
+        if (p.role == Role.client and p.user_branch_id) else None
+    br_name, br_stats = (br.name if br else None), {}
+    if br:
+        # o'sha filialning boshqa loginlari ham bor bo'lishi mumkin
+        others = db.query(models.User).filter(
+            models.User.user_branch_id == br.id, models.User.id != uid).all()
+        # TARTIB MUHIM: avval loginlarni filialdan uzamiz, aks holda filialni
+        # o'chirishda tashqi kalit xatosi (500) chiqadi
+        db.query(models.User).filter(models.User.user_branch_id == br.id).update(
+            {models.User.user_branch_id: None}, synchronize_session=False)
+        db.flush()
+        for other in others:
+            _purge_user(db, other)
+        stats = _purge_user(db, p)
+        br_stats = _purge_branch(db, br)
+    else:
+        stats = _purge_user(db, p)
+    db.commit()
+    msg = f"Пользователь «{name}» удалён (заявок: {stats['reqs']})"
+    if br_name:
+        msg += (f". Вместе с ним удалён филиал «{br_name}» "
+                f"(записей стоп-листа: {br_stats.get('stops', 0)})")
+    return RedirectResponse("/admin?ok=" + urllib.parse.quote(msg), 302)
 
 
 @app.post("/admin/users/{uid}/edit")
@@ -1571,37 +1644,20 @@ def admin_branch_delete(bid: int, request: Request, db: Session = Depends(get_db
     if not b:
         return RedirectResponse("/admin", 302)
     name = b.name
-    # Bog'liq ma'lumotlarni ANIQ tartibda uzamiz.
-    # (Aks holda: Postgres'da tashqi kalit xatosi, SQLite'da esa yetim yozuvlar.)
-
-    # 1) Zayavkalar saqlanadi — filial nomi matn sifatida qoladi, tarix yo'qolmaydi
-    n_req = db.query(models.Request).filter(models.Request.branch_id == bid).count()
-    db.query(models.Request).filter(models.Request.branch_id == bid).update(
-        {models.Request.branch_id: None, models.Request.branch: name},
-        synchronize_session=False)
-
-    # 2) Stop yozuvlari o'chiriladi — filialsiz ma'nosi yo'q (branch_id majburiy maydon)
-    n_stop = db.query(models.StopEntry).filter(models.StopEntry.branch_id == bid).count()
-    db.query(models.StopEntry).filter(models.StopEntry.branch_id == bid)\
-        .delete(synchronize_session=False)
-
-    # 3) Filial logini O'CHIRILMAYDI — u yaratgan zayavka/izohlar buzilmasin.
-    #    Faqat filialdan uziladi va nofaol qilinadi (kirolmaydi).
-    n_user = db.query(models.User).filter(models.User.user_branch_id == bid).count()
-    db.query(models.User).filter(models.User.user_branch_id == bid).update(
-        {models.User.user_branch_id: None, models.User.is_active: False},
-        synchronize_session=False)
-
-    # 4) КПП ko'rinish bog'lanishlari
-    db.execute(models.kpp_branches.delete().where(
-        models.kpp_branches.c.branch_id == bid))
-
-    db.delete(b)
+    # Filial va uning logini bir butun — biri o'chsa, ikkinchisi ham o'chadi.
+    logins = db.query(models.User).filter(models.User.user_branch_id == bid).all()
+    login_names = [u.email for u in logins]
+    n_user_reqs = 0
+    for u in logins:
+        n_user_reqs += _purge_user(db, u)["reqs"]
+    stats = _purge_branch(db, b)
     db.commit()
-    msg = (f"Филиал «{name}» удалён. Заявок сохранено: {n_req}; "
-           f"записей стоп-листа удалено: {n_stop}; "
-           f"логинов отключено: {n_user}.")
-    return RedirectResponse("/admin?ok=" + urllib.parse.quote(msg), 302)
+    msg = (f"Филиал «{name}» удалён. Заявок сохранено: {stats['reqs']}; "
+           f"записей стоп-листа удалено: {stats['stops']}")
+    if login_names:
+        msg += (f"; удалён логин: {', '.join(login_names)} "
+                f"(его заявок удалено: {n_user_reqs})")
+    return RedirectResponse("/admin?ok=" + urllib.parse.quote(msg + "."), 302)
 
 
 @app.post("/admin/branches/{bid}/edit")
