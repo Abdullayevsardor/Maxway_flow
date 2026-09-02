@@ -1763,6 +1763,7 @@ def is_supply(user):
 PERMISSION_DEFS = [
     ("create_request", "Создавать заявки", "Заявки"),
     ("assign",         "Назначать исполнителей", "Заявки"),
+    ("view_stop",      "Видеть стоп-лист", "Стоп-лист"),
     ("add_stop",       "Добавлять в стоп-лист", "Стоп-лист"),
     ("edit_stop",      "Редактировать запись стоп-листа", "Стоп-лист"),
     ("resolve_stop",   "Убирать из стоп-листа", "Стоп-лист"),
@@ -1782,6 +1783,9 @@ def _role_default(user, key):
         return r in (Role.admin, Role.manager, Role.client)
     if key == "assign":
         return r in (Role.admin, Role.manager)
+    if key == "view_stop":
+        # standart: filial, Просмотр, КПП, Снабжение (admin — has_perm ichida)
+        return r in (Role.client, Role.viewer, Role.admin, Role.kpp) or is_supply(user)
     if key == "add_stop":
         return r == Role.client
     if key == "edit_stop":
@@ -1795,7 +1799,7 @@ def _role_default(user, key):
         # stop sababini tasdiqlash — faqat Снабжение (va admin, has_perm'da)
         return is_supply(user)
     if key == "export_stop":
-        return r in (Role.client, Role.viewer) or is_supply(user)
+        return r in (Role.client, Role.viewer, Role.kpp) or is_supply(user)
     if key == "manage_menu":
         return r == Role.manager and is_supply(user)
     if key == "view_analytics":
@@ -1825,8 +1829,18 @@ templates.env.globals["PERMISSION_DEFS"] = PERMISSION_DEFS
 
 
 def can_see_stoplist(user):
-    # Снабжение, filial direktorlari, viewer, admin
-    return user.role in (Role.client, Role.viewer, Role.admin) or is_supply(user)
+    """Stop-listni ko'rish — ruxsatga qarab. Admin istagan rolga bera oladi
+    (Админ панель → ruxsatlar → «Видеть стоп-лист»)."""
+    return has_perm(user, "view_stop")
+
+
+def kpp_visible_ids(user):
+    """КПП ga admin biriktirgan filial ID lari.
+    КПП bo'lmasa — None (cheklov yo'q). Biriktirilmagan КПП — bo'sh ro'yxat,
+    ya'ni hech nima ko'rmaydi (zayavkalardagi base_requests bilan bir xil)."""
+    if user is None or user.role != Role.kpp:
+        return None
+    return [b.id for b in user.visible_branches]
 
 
 def can_manage_menu(user):
@@ -1862,6 +1876,9 @@ def can_view_stop(user, e) -> bool:
         return False
     if user.role == Role.client:
         return e.branch_id == user.user_branch_id
+    vis = kpp_visible_ids(user)
+    if vis is not None:
+        return e.branch_id in vis
     return True
 
 
@@ -1875,7 +1892,11 @@ def _stop_filters(user, branch_id="", menu_item_id="", reason="", confirmed="",
     if user.role == Role.client:
         f["branch_id"] = user.user_branch_id
     elif str(branch_id).isdigit():
-        f["branch_id"] = int(branch_id)
+        bid = int(branch_id)
+        vis = kpp_visible_ids(user)
+        # КПП o'ziga biriktirilmagan filialni so'rasa — filtr qo'llanmaydi
+        if vis is None or bid in vis:
+            f["branch_id"] = bid
     if str(menu_item_id).isdigit():
         f["menu_item_id"] = int(menu_item_id)
     if reason in REASON_LABELS:
@@ -1912,6 +1933,10 @@ def _stop_query(db: Session, user, f: dict, resolved: bool):
     # klient filialga biriktirilmagan bo'lsa — hech nima ko'rmaydi (ma'lumot sizib chiqmasin)
     if user.role == Role.client and not f["branch_id"]:
         return q.filter(sqltext("1 = 0"))
+    # КПП — faqat admin biriktirgan filiallar bo'yicha
+    vis = kpp_visible_ids(user)
+    if vis is not None:
+        q = q.filter(models.StopEntry.branch_id.in_(vis if vis else [-1]))
     if f["branch_id"]:
         q = q.filter(models.StopEntry.branch_id == f["branch_id"])
     if f["menu_item_id"]:
@@ -2051,7 +2076,14 @@ def _stoplist_context(request: Request, db: Session, user, resolved: bool,
     q, sort_by, sort_order = _stop_sorted(q, sort_by, sort_order, resolved)
     entries, pg = _stop_page(q, page, page_size)
     # filtr uchun spravochniklar
-    branches = [] if is_client else sorted_by_name(db.query(models.Branch).all())
+    if is_client:
+        branches = []
+    else:
+        bq = db.query(models.Branch)
+        vis = kpp_visible_ids(user)
+        if vis is not None:
+            bq = bq.filter(models.Branch.id.in_(vis if vis else [-1]))
+        branches = sorted_by_name(bq.all())
     dishes = sorted_by_name(db.query(models.MenuItem).all())
     # joriy filtrni saqlab qoluvchi query-string (sort/pagination/export havolalari uchun)
     keep = {"branch_id": f["branch_id"] if not is_client else "",

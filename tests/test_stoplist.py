@@ -954,3 +954,111 @@ def test_any_branch_linked_user_deletes_branch(client, seed, db):
     db.expire_all()
     assert db.get(models.User, uid) is None
     assert db.get(models.Branch, bid) is None
+
+
+# ================= КПП — ko'rish va filial cheklovi =================
+@pytest.fixture(scope="module")
+def kpp_users(db, seed):
+    """Bitta filialga biriktirilgan КПП va biriktirilmagan КПП."""
+    from app import auth
+
+    def mk(email, branches):
+        u = models.User(full_name=email.split("@")[0], email=email,
+                        hashed_password=auth.hash_password("test12345"),
+                        role=models.Role.kpp, is_active=True)
+        u.visible_branches = branches
+        db.add(u)
+        return u
+
+    tied = mk("kpp1@t.uz", [seed["b1"]])
+    free = mk("kpp_no_branch@t.uz", [])
+    # shu testlar uchun toza taom — boshqa testlarda stopga tushmagan
+    dish = models.MenuItem(name="Морс клюквенный", is_active=True)
+    db.add(dish)
+    db.commit()
+    return {"tied": tied, "free": free, "dish": dish}
+
+
+def test_kpp_sees_stoplist_page_and_filter(client, seed, kpp_users):
+    """КПП stop-list sahifasiga kiradi va filtr paneli ko'rinadi."""
+    login(client, kpp_users["tied"])
+    r = client.get("/stoplist", follow_redirects=False)
+    assert r.status_code == 200, "КПП stop-listni ko'rishi kerak"
+    assert 'name="branch_id"' in r.text, "filtr КПП uchun ham bo'lishi kerak"
+    assert 'name="reason"' in r.text
+
+
+def test_kpp_filter_lists_only_assigned_branches(client, seed, kpp_users):
+    """Filtrdagi filial ro'yxatida faqat biriktirilgan filial bo'ladi."""
+    login(client, kpp_users["tied"])
+    r = client.get("/stoplist")
+    assert "Ресторан №12" in r.text
+    assert "Ресторан №7" not in r.text
+
+
+def test_kpp_does_not_see_other_branch_entries(client, seed, db, kpp_users):
+    """Boshqa filial yozuvlari ro'yxatga ham, URL orqali ham tushmaydi."""
+    login(client, seed["branch2"])                       # Ресторан №7 yozuv qo'shadi
+    r = api_create(client, kpp_users["dish"].id)
+    assert r.status_code == 201, r.text
+    other_id = r.json()["created"][0]["id"]
+
+    login(client, kpp_users["tied"])                     # КПП faqat Ресторан №12
+    link = f"/stoplist/{other_id}"
+    assert link not in client.get("/stoplist").text
+    # begona filial ID si bilan filtr ham ma'lumot ochmaydi
+    assert link not in client.get(f"/stoplist?branch_id={seed['b2'].id}").text
+    # to'g'ridan-to'g'ri havola ham yopiq
+    assert client.get(link, follow_redirects=False).status_code in (302, 403, 404)
+
+
+def test_kpp_without_branches_sees_nothing(client, seed, kpp_users):
+    """Filial biriktirilmagan КПП — sahifa ochiladi, lekin yozuv ko'rinmaydi."""
+    login(client, kpp_users["free"])
+    r = client.get("/stoplist", follow_redirects=False)
+    assert r.status_code == 200
+    assert "Ресторан №12" not in r.text and "Ресторан №7" not in r.text
+
+
+def test_admin_can_grant_stoplist_to_any_role(client, seed, db):
+    """Admin ruxsat bergan ijrochi ham stop-listni ko'radi (standartda ko'rmaydi)."""
+    from app import auth
+    u = models.User(full_name="exec", email="exec_stop@t.uz",
+                    hashed_password=auth.hash_password("test12345"),
+                    role=models.Role.executor, is_active=True)
+    db.add(u); db.commit()
+
+    login(client, u)
+    assert client.get("/stoplist", follow_redirects=False).status_code == 302
+
+    u.perms = '{"view_stop": true}'
+    db.commit()
+    login(client, u)
+    assert client.get("/stoplist", follow_redirects=False).status_code == 200
+
+
+def test_kpp_can_export_only_own_branches(client, seed, db, kpp_users):
+    """КПП Excel yuklaydi, lekin faylda faqat o'z filiali yozuvlari bo'ladi."""
+    import openpyxl
+
+    # Ресторан №7 da yozuv bor (boshqa testdan) — КПП ga u ko'rinmasligi kerak
+    login(client, kpp_users["tied"])
+    r = client.get("/stoplist/export")
+    assert r.status_code == 200, "КПП eksport qila olishi kerak"
+
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    branches = {row[1] for row in wb.active.iter_rows(min_row=2, values_only=True)
+                if row and row[1]}
+    assert branches <= {"Ресторан №12"}, f"begona filial tushib qoldi: {branches}"
+
+
+def test_kpp_without_branches_exports_empty(client, seed, kpp_users):
+    """Filial biriktirilmagan КПП — fayl beriladi, lekin yozuvsiz."""
+    import openpyxl
+
+    login(client, kpp_users["free"])
+    r = client.get("/stoplist/export")
+    assert r.status_code == 200
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    rows = [x for x in wb.active.iter_rows(min_row=2, values_only=True) if x and x[1]]
+    assert rows == []
