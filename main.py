@@ -402,6 +402,16 @@ def scoped_executors(db: Session, user):
     return q.all()
 
 
+def scoped_branches(db: Session, user):
+    """Filtrlar uchun filiallar ro'yxati.
+    КПП — faqat admin biriktirgan filiallar; qolganlar — barchasi."""
+    q = db.query(models.Branch)
+    vis = kpp_visible_ids(user)
+    if vis is not None:
+        q = q.filter(models.Branch.id.in_(vis if vis else [-1]))
+    return q.order_by(models.Branch.name).all()
+
+
 def scoped_departments(db: Session, user):
     """Bo'limga biriktirilgan admin/ijrochi faqat o'z bo'limini ko'radi."""
     q = db.query(models.Department)
@@ -578,7 +588,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
         "f_unassigned": unassigned, "f_month": month,
         "customers": sorted(customers), "month_start": month_start, "today_str": today_str,
         "cur_month": cur_month,
-        "branches": db.query(models.Branch).order_by(models.Branch.name).all(),
+        "branches": scoped_branches(db, user),
         "f_branch": f_branch,
     }
     return templates.TemplateResponse(request, "dashboard.html", ctx)
@@ -589,7 +599,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
 def requests_page(request: Request, department_id: str = "",
                   status: Optional[str] = None, q: Optional[str] = None,
                   subcategory_id: str = "", date_from: str = "", date_to: str = "",
-                  customer: str = "", assignee: str = "",
+                  customer: str = "", assignee: str = "", branch_id: str = "",
                   unassigned: str = "",
                   db: Session = Depends(get_db)):
     user = current_user(request, db)
@@ -599,8 +609,11 @@ def requests_page(request: Request, department_id: str = "",
     department_id = int(department_id) if str(department_id).isdigit() else None
     subcategory_id = int(subcategory_id) if str(subcategory_id).isdigit() else None
     assignee = int(assignee) if str(assignee).isdigit() else None
+    branch_id = int(branch_id) if str(branch_id).isdigit() else None
     unassigned = 1 if unassigned else None
     query = base_requests(db, user)
+    if branch_id:
+        query = query.filter(models.Request.branch_id == branch_id)
     if department_id:
         query = query.filter(models.Request.department_id == department_id)
     if subcategory_id:
@@ -656,10 +669,13 @@ def requests_page(request: Request, department_id: str = "",
         "items": items, "departments": scoped_departments(db, user),
         "executors": scoped_executors(db, user), "selected_dep": selected_dep,
         "selected_status": status, "counts": counts, "search": q or "",
-        "branches": db.query(models.Branch).order_by(models.Branch.name).all(),
+        "branches": scoped_branches(db, user),
         "subcats_map": subcats_map, "all_subcats": subcats,
         "f_subcategory": subcategory_id, "f_date_from": date_from, "f_date_to": date_to,
         "f_customer": customer, "f_assignee": assignee, "f_unassigned": unassigned,
+        "f_branch": branch_id, "f_department": department_id,
+        "any_filter": bool(department_id or subcategory_id or assignee or branch_id
+                           or q or customer.strip() or date_from.strip() or date_to.strip()),
     })
 
 
