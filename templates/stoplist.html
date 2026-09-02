@@ -49,7 +49,7 @@
         {{ sp.sort_th('Причина', 'reason', '/stoplist', qs, sort_by, sort_order) }}
         {{ sp.sort_th('Подтверждение', 'supply_confirmed', '/stoplist', qs, sort_by, sort_order, '150px') }}
         {{ sp.sort_th('Комм. снабжения', 'supply_comment', '/stoplist', qs, sort_by, sort_order) }}
-        {% if can_resolve %}<th style="width:1%"></th>{% endif %}
+        {% if can_resolve or can_comment %}<th style="width:1%"></th>{% endif %}
       </tr></thead>
       <tbody>
         {% for e in entries %}
@@ -73,23 +73,8 @@
           </td>
           <td data-label="Причина"><span class="reason-tag">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
           {{ sp.confirm_cell(e, can_confirm) }}
-          <td data-label="Комм. снабжения" class="cmt-cell">
-            {% if can_comment %}
-            <form method="post" action="/stoplist/{{ e.id }}/comment" autocomplete="off" style="display:flex;gap:6px;margin:0;min-width:190px">
-              <input type="text" name="comment" value="{{ e.supply_comment or '' }}" maxlength="1000"
-                     class="inp" style="padding:6px 8px;font-size:13px" placeholder="Комментарий...">
-              <button type="submit" class="btn btn-light" style="padding:6px 10px" title="Сохранить">OK</button>
-            </form>
-            {% else %}{{ e.supply_comment or "—" }}{% endif %}
-          </td>
-          {% if can_resolve %}
-          <td data-label="" style="white-space:nowrap">
-            <form method="post" action="/stoplist/{{ e.id }}/resolve" class="inline-f"
-                  onsubmit="return confirm('Убрать «{{ e.menu_item.name if e.menu_item else '' }}» из стоп-листа?')">
-              <button type="submit" class="btn btn-light" style="padding:6px 11px;color:var(--green);border-color:#86efac">Убрать</button>
-            </form>
-          </td>
-          {% endif %}
+          {{ sp.comment_cell(e, can_comment) }}
+          {% if can_resolve or can_comment %}{{ sp.action_cell(e, can_resolve, can_comment) }}{% endif %}
         </tr>
         {% endfor %}
       </tbody>
@@ -105,6 +90,11 @@
     </div>
     {% endif %}
     </form>
+
+    {# Qator formalari — ommaviy formadan TASHQARIDA (forma ichida forma bo'lmaydi).
+       Yuqoridagi tugmalar bularga form="..." atributi orqali bog'langan. #}
+    {% for e in entries %}{{ sp.row_forms(e, can_confirm, can_comment, can_resolve) }}{% endfor %}
+
     {{ sp.pager('/stoplist', qs, pg, sort_by, sort_order) }}
     {% endif %}
   </div>
@@ -150,6 +140,7 @@
 </script>
 {% endif %}
 
+{{ sp.action_script() }}
 {{ sp.row_link_script() }}
 
 {% endblock %}

@@ -51,15 +51,7 @@
           </td>
           <td data-label="Причина"><span class="reason-tag">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
           {{ sp.confirm_cell(e, can_confirm) }}
-          <td data-label="Комм. снабжения" class="cmt-cell">
-            {% if can_comment %}
-            <form method="post" action="/stoplist/{{ e.id }}/comment" autocomplete="off" style="display:flex;gap:6px;margin:0;min-width:190px">
-              <input type="text" name="comment" value="{{ e.supply_comment or '' }}" maxlength="1000"
-                     class="inp" style="padding:6px 8px;font-size:13px" placeholder="Комментарий...">
-              <button type="submit" class="btn btn-light" style="padding:6px 10px" title="Сохранить">OK</button>
-            </form>
-            {% else %}{{ e.supply_comment or "—" }}{% endif %}
-          </td>
+          {{ sp.comment_cell(e, can_comment, inline_save=true) }}
           <td data-label="Убрано" class="when-cell">
             {% if e.resolved_at %}
             <div class="d">{{ e.resolved_at.strftime('%d.%m.%Y') }}</div>
@@ -71,11 +63,16 @@
       </tbody>
     </table>
     </div>
+
+    {# Qator formalari — jadvaldan tashqarida (tugmalar form="..." orqali bog'lanadi) #}
+    {% for e in history %}{{ sp.row_forms(e, can_confirm, can_comment, false) }}{% endfor %}
+
     {{ sp.pager('/stoplist/history', qs, pg, sort_by, sort_order) }}
     {% endif %}
   </div>
 </div>
 
+{{ sp.action_script() }}
 {{ sp.row_link_script() }}
 
 {% endblock %}

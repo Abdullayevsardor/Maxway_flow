@@ -4,3 +4,4 @@
 -r requirements.txt
 pytest>=8.0
 httpx>=0.27
+html5lib>=1.1        # brauzer qoidalari bo'yicha HTML tahlili (forma ichida forma testi)

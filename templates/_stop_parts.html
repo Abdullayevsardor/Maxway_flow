@@ -93,18 +93,120 @@
 {% endmacro %}
 
 {# Подтверждение ustuni: ДА/НЕТ tegi, ruxsat bo'lsa — bosiladigan pereklyuchatel #}
+{# ===== Qator amallari =====
+   MUHIM: qator formalari jadval ichida YOZILMAYDI. Jadvalni ommaviy
+   «Убрать со стопа» formasi o'rab turadi, HTML esa forma ichida forma
+   ochishга ruxsat bermaydi — brauzer uni tashlab yuboradi va tugma
+   noto'g'ri manzilga ketadi. Shuning uchun formalar `row_forms()` bilan
+   jadvaldan tashqarida chiqariladi, tugmalar esa `form="..."` atributi
+   orqali ularga bog'lanadi. #}
+
+{# Har bir yozuv uchun formalar. Jadvaldan TASHQARIDA chaqirilishi shart. #}
+{% macro row_forms(e, can_confirm, can_comment, can_resolve) %}
+  {% if can_confirm %}
+  <form method="post" action="/stoplist/{{ e.id }}/confirm" id="xf{{ e.id }}" hidden>
+    <input type="hidden" name="supply_confirmed" value="{{ 0 if e.supply_confirmed else 1 }}">
+  </form>
+  {% endif %}
+  {% if can_comment %}
+  <form method="post" action="/stoplist/{{ e.id }}/comment" id="cf{{ e.id }}"
+        autocomplete="off" hidden></form>
+  {% endif %}
+  {% if can_resolve %}
+  <form method="post" action="/stoplist/{{ e.id }}/resolve" id="rf{{ e.id }}" hidden
+        data-dish="{{ e.menu_item.name if e.menu_item else '' }}"
+        onsubmit="return confirm('Убрать «' + this.dataset.dish + '» из стоп-листа?')"></form>
+  {% endif %}
+{% endmacro %}
+
 {% macro confirm_cell(e, can_confirm) %}
 <td data-label="Подтверждение снабжения">
   {% if can_confirm %}
-  <form method="post" action="/stoplist/{{ e.id }}/confirm" class="inline-f">
-    <input type="hidden" name="supply_confirmed" value="{{ 0 if e.supply_confirmed else 1 }}">
-    <button type="submit" class="conf-tag {{ 'yes' if e.supply_confirmed else 'no' }}"
-            title="Нажмите, чтобы изменить">{{ confirm_label(e.supply_confirmed) }}</button>
-  </form>
+  <button type="submit" form="xf{{ e.id }}" class="conf-tag {{ 'yes' if e.supply_confirmed else 'no' }}"
+          title="Нажмите, чтобы изменить">{{ confirm_label(e.supply_confirmed) }}</button>
   {% else %}
   <span class="conf-tag {{ 'yes' if e.supply_confirmed else 'no' }} ro">{{ confirm_label(e.supply_confirmed) }}</span>
   {% endif %}
 </td>
+{% endmacro %}
+
+{# Снабжение izohi. inline_save=true — saqlash tugmasi shu yacheykada
+   (tarix sahifasi, u yerda «Убрать» yo'q). #}
+{% macro comment_cell(e, can_comment, inline_save=false) %}
+<td data-label="Комм. снабжения" class="cmt-cell">
+  {% if can_comment %}
+  <div class="cmt-wrap">
+    <input type="text" name="comment" form="cf{{ e.id }}" class="inp cmt-inp"
+           value="{{ e.supply_comment or '' }}" data-orig="{{ e.supply_comment or '' }}"
+           data-row="{{ e.id }}" maxlength="1000" placeholder="Комментарий...">
+    {% if inline_save %}
+    <button type="submit" form="cf{{ e.id }}" class="act-btn act-save"
+            data-row="{{ e.id }}" hidden>Сохранить</button>
+    {% endif %}
+  </div>
+  {% else %}{{ e.supply_comment or "—" }}{% endif %}
+</td>
+{% endmacro %}
+
+{# Amal ustuni: standart holatda «Убрать», izoh tahrirlansa — «Сохранить». #}
+{% macro action_cell(e, can_resolve, can_comment) %}
+<td data-label="" class="act-cell">
+  {% if can_resolve %}
+  <button type="submit" form="rf{{ e.id }}" class="act-btn act-remove"
+          data-row="{{ e.id }}">Убрать</button>
+  {% endif %}
+  {% if can_comment %}
+  <button type="submit" form="cf{{ e.id }}" class="act-btn act-save"
+          data-row="{{ e.id }}" hidden>Сохранить</button>
+  {% endif %}
+</td>
+{% endmacro %}
+
+{# Izoh o'zgarganda «Убрать» → «Сохранить». Saqlangach sahifa yangilanadi
+   va tugma o'z-o'zidan «Убрать» holatiga qaytadi. #}
+{% macro action_script() %}
+<style>
+  .cmt-wrap{display:flex;gap:6px;align-items:center;min-width:190px}
+  .cmt-inp{padding:6px 9px;font-size:13px;width:100%;transition:border-color .15s,box-shadow .15s}
+  .cmt-inp.dirty{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+  .act-cell{white-space:nowrap}
+  .act-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+           padding:6px 13px;font-size:13px;font-weight:600;border-radius:8px;
+           border:1px solid transparent;cursor:pointer;line-height:1.4;
+           transition:background .15s,border-color .15s,color .15s}
+  .act-btn[hidden]{display:none}
+  .act-remove{color:#16a34a;background:#f0fdf4;border-color:#bbf7d0}
+  .act-remove:hover{background:#dcfce7;border-color:#86efac}
+  .act-save{color:#fff;background:var(--blue);border-color:var(--blue)}
+  .act-save:hover{filter:brightness(1.07)}
+  .act-save:focus-visible{outline:2px solid #93c5fd;outline-offset:2px}
+</style>
+<script>
+(function(){
+  function pick(cls, id){ return document.querySelector(cls + '[data-row="' + id + '"]'); }
+  document.querySelectorAll('.cmt-inp').forEach(function(inp){
+    var id = inp.dataset.row;
+    var save = pick('.act-save', id), remove = pick('.act-remove', id);
+    function sync(){
+      var dirty = inp.value !== inp.dataset.orig;
+      inp.classList.toggle('dirty', dirty);
+      if(!save) return;                 // izoh huquqi yo'q — tegmaymiz
+      save.hidden = !dirty;
+      if(remove) remove.hidden = dirty; // «Убрать» o'rnini «Сохранить» egallaydi
+    }
+    inp.addEventListener('input', sync);
+    inp.addEventListener('keydown', function(ev){
+      if(ev.key === 'Enter'){           // Enter — saqlash
+        ev.preventDefault();
+        if(inp.value !== inp.dataset.orig && save) save.click();
+      } else if(ev.key === 'Escape'){   // Esc — o'zgarishni bekor qilish
+        inp.value = inp.dataset.orig; sync(); inp.blur();
+      }
+    });
+    sync();
+  });
+})();
+</script>
 {% endmacro %}
 
 {# Qatorni bosib yozuv sahifasiga o'tish.
