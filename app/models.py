@@ -288,3 +288,24 @@ class IikoSync(Base):
     last_error = Column(Text, default="")
     last_added = Column(Integer, default=0)
     last_resolved = Column(Integer, default=0)
+
+
+class IikoWebhookEvent(Base):
+    """iiko webhook'idan kelgan xom hodisa.
+
+    iiko stop-list o'zgarganda o'zi xabar yuboradi — buning uchun access_token
+    kerak emas, shuning uchun apiKey ishlamayotgan holatda ham ishlaydi.
+
+    Payload aynan qanday ko'rinishda kelishi hujjatlarda to'liq yozilmagan
+    (to'liq ro'yxatmi yoki faqat o'zgargan pozitsiyalarmi — noma'lum), shuning
+    uchun avval XOM holida saqlaymiz. Real hodisani ko'rgach tahlil mantiqi
+    yoziladi: noto'g'ri taxmin butun stop-listni tozalab yuborishi mumkin."""
+    __tablename__ = "iiko_webhook_events"
+    id = Column(Integer, primary_key=True)
+    received_at = Column(DateTime, default=tashkent_now, index=True)
+    event_type = Column(String(64), default="", index=True)
+    org_id = Column(String(64), default="")
+    terminal_group_id = Column(String(64), default="", index=True)
+    authorized = Column(Boolean, default=False)   # token to'g'ri keldimi
+    note = Column(String(200), default="")        # tahlil izohi / xato sababi
+    body = Column(Text, default="")               # xom JSON (kesilgan)

@@ -2,6 +2,7 @@
 import os
 import json
 import hashlib
+import hmac
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -2692,6 +2693,113 @@ def start_iiko_worker():
 start_iiko_worker()
 
 
+# ---------- iiko webhook: token talab qilmaydigan kanal ----------
+# iikoWeb → Внешние заказы → API логин → Подключённые точки → веб-хуки.
+# Bu kanal access_token so'ramaydi: iiko o'zi bizga POST qiladi. Shuning uchun
+# apiKey /api/1/access_token dan token ololmayotgan holatda ham ishlaydi.
+#
+# Hozircha faqat YOZIB OLADI, stop-listga tegmaydi. Sabab: iiko to'liq ro'yxat
+# yuboradimi yoki faqat o'zgargan pozitsiyalarnimi — hujjatda aniq emas.
+# Delta'ni to'liq ro'yxat deb qabul qilsak, _iiko_sync_branch qolgan hamma
+# taomni stopdan olib yuborardi. Real hodisalarni ko'rgach tahlil qo'shiladi.
+IIKO_WEBHOOK_TOKEN = os.environ.get("MAXWAY_IIKO_WEBHOOK_TOKEN", "").strip()
+IIKO_WEBHOOK_KEEP = 300          # nechta oxirgi hodisa bazada qoladi
+IIKO_WEBHOOK_BODY_MAX = 20000    # bitta yozuvda saqlanadigan JSON uzunligi
+
+
+def _iiko_webhook_authorized(request: Request) -> bool:
+    """iikoWeb'dagi «Токен авторизации» bilan solishtiradi.
+
+    Token Authorization sarlavhasida keladi; «Bearer » prefiksi bilan ham,
+    prefiksiz ham bo'lishi mumkin — ikkalasi ham qabul qilinadi."""
+    if not IIKO_WEBHOOK_TOKEN:
+        return False
+    got = (request.headers.get("authorization") or "").strip()
+    if got.lower().startswith("bearer "):
+        got = got[7:].strip()
+    return bool(got) and hmac.compare_digest(got, IIKO_WEBHOOK_TOKEN)
+
+
+def _iiko_webhook_rows(payload) -> list:
+    """Xom payload'ni jurnal qatorlariga ajratadi.
+
+    iiko odatda hodisalar RO'YXATINI yuboradi; ro'yxat bo'lmasa — bitta qator.
+    Maydon nomlari turlicha bo'lishi mumkin, shuning uchun bir nechta variant
+    qaraladi va topilmagani bo'sh qoladi (xom JSON baribir saqlanadi)."""
+    events = payload if isinstance(payload, list) else [payload]
+    rows = []
+    for ev in events[:50]:          # bitta so'rovda juda ko'p bo'lsa — cheklaymiz
+        if not isinstance(ev, dict):
+            rows.append({"event_type": "", "org_id": "", "terminal_group_id": "",
+                         "note": "hodisa obyekt emas", "raw": ev})
+            continue
+        info = ev.get("eventInfo")
+        info = info if isinstance(info, dict) else {}
+        rows.append({
+            "event_type": str(ev.get("eventType") or "")[:64],
+            "org_id": str(ev.get("organizationId")
+                          or info.get("organizationId") or "")[:64],
+            "terminal_group_id": str(info.get("terminalGroupId")
+                                     or ev.get("terminalGroupId") or "")[:64],
+            "note": "",
+            "raw": ev,
+        })
+    return rows
+
+
+def _iiko_webhook_prune(db: Session):
+    """Jurnal cheksiz o'smasin — oxirgi IIKO_WEBHOOK_KEEP tadan boshqasi o'chadi."""
+    try:
+        total = db.query(func.count(models.IikoWebhookEvent.id)).scalar() or 0
+        if total <= IIKO_WEBHOOK_KEEP + 50:     # har safar emas, to'planib qolganda
+            return
+        cut = db.query(models.IikoWebhookEvent.id).order_by(
+            models.IikoWebhookEvent.id.desc()).offset(IIKO_WEBHOOK_KEEP).first()
+        if cut:
+            db.query(models.IikoWebhookEvent).filter(
+                models.IikoWebhookEvent.id <= cut[0]).delete(synchronize_session=False)
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        print(">>> [MAXWAY] iiko webhook jurnalini tozalash xato:", e, flush=True)
+
+
+@app.post("/iiko/webhook")
+async def iiko_webhook(request: Request, db: Session = Depends(get_db)):
+    """iiko hodisalarini qabul qiladi va jurnalga yozadi.
+
+    DOIM 200 qaytaradi. iiko javob bermagan manzilga yuborishni to'xtatadi
+    («Ограничения на отправку: веб-хуки не доставляются на указанный url»),
+    shuning uchun ichkarida xato chiqsa ham 200 beramiz — sabab jurnalga
+    yoziladi, hodisa esa yo'qolmaydi."""
+    ok_auth = _iiko_webhook_authorized(request)
+    try:
+        raw = (await request.body()).decode("utf-8", "replace")
+    except Exception as e:
+        print(">>> [MAXWAY] iiko webhook: tanani o'qib bo'lmadi:", e, flush=True)
+        return JSONResponse({"ok": True})
+    note = "" if ok_auth else "token mos emas — faqat jurnalga yozildi"
+    try:
+        rows = _iiko_webhook_rows(json.loads(raw) if raw.strip() else None)
+    except Exception as e:
+        rows = [{"event_type": "", "org_id": "", "terminal_group_id": "",
+                 "note": f"JSON emas: {e}"[:200], "raw": None}]
+    try:
+        for r in rows:
+            body = (json.dumps(r["raw"], ensure_ascii=False)
+                    if r["raw"] is not None else raw)
+            db.add(models.IikoWebhookEvent(
+                event_type=r["event_type"], org_id=r["org_id"],
+                terminal_group_id=r["terminal_group_id"], authorized=ok_auth,
+                note=(r["note"] or note)[:200], body=body[:IIKO_WEBHOOK_BODY_MAX]))
+        db.commit()
+        _iiko_webhook_prune(db)
+    except Exception as e:
+        db.rollback()
+        print(">>> [MAXWAY] iiko webhook: jurnalga yozib bo'lmadi:", e, flush=True)
+    return JSONResponse({"ok": True})
+
+
 @app.post("/stoplist/add")
 def stoplist_add(request: Request, menu_item_id: List[int] = Form([]),
                  menu_name: List[str] = Form([]), branch_id: str = Form(""),
@@ -3378,6 +3486,41 @@ def api_iiko_status(request: Request, db: Session = Depends(get_db)):
                                    if b.iiko_synced_at else None}
                      for b in branches],
         "linked": sum(1 for b in branches if (b.iiko_terminal_id or "").strip()),
+        "webhook_token_set": bool(IIKO_WEBHOOK_TOKEN),
+        "webhook_events": db.query(func.count(models.IikoWebhookEvent.id)).scalar() or 0,
+        "webhook_last_at": (lambda e: e.received_at.strftime("%d.%m.%Y %H:%M:%S")
+                            if e and e.received_at else None)(
+            db.query(models.IikoWebhookEvent).order_by(
+                models.IikoWebhookEvent.id.desc()).first()),
+    })
+
+
+@app.get("/api/iiko/webhook-log")
+def api_iiko_webhook_log(request: Request, limit: int = 20,
+                         db: Session = Depends(get_db)):
+    """Oxirgi webhook hodisalari — payload ko'rinishini aniqlash uchun.
+
+    iiko aynan nima yuborayotganini ko'rmasdan tahlil mantiqini yozib bo'lmaydi,
+    shuning uchun xom JSON shu yerda ochiladi."""
+    user = current_user(request, db)
+    if not user or user.role != Role.admin:
+        raise HTTPException(status_code=403, detail="Только для администратора")
+    n = max(1, min(int(limit or 20), 100))
+    rows = db.query(models.IikoWebhookEvent).order_by(
+        models.IikoWebhookEvent.id.desc()).limit(n).all()
+    return JSONResponse({
+        "token_set": bool(IIKO_WEBHOOK_TOKEN),
+        "total": db.query(func.count(models.IikoWebhookEvent.id)).scalar() or 0,
+        "events": [{
+            "id": e.id,
+            "at": e.received_at.strftime("%d.%m.%Y %H:%M:%S") if e.received_at else "",
+            "type": e.event_type or "",
+            "org_id": e.org_id or "",
+            "terminal_group_id": e.terminal_group_id or "",
+            "authorized": bool(e.authorized),
+            "note": e.note or "",
+            "body": e.body or "",
+        } for e in rows],
     })
 
 
