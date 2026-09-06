@@ -149,10 +149,13 @@ class IikoClient:
         except IikoError as e:
             if "/api/v2/access_token" in str(e):
                 raise IikoError(
-                    "Bu apiKey marketplace ilovasi kaliti — appId (GUID) va "
-                    "clientSecret ham kerak. MAXWAY_IIKO_APP_ID va "
-                    "MAXWAY_IIKO_CLIENT_SECRET ni to'ldiring "
-                    "(yoki iiko_login.txt ga appId=... / clientSecret=... yozing)."
+                    "Bu kalit marketplace ilovasi apiKey'i — /api/1/access_token "
+                    "unga token bermaydi. Ikki yo'ldan biri kerak: "
+                    "(1) iikoWeb'dan oddiy apiLogin olib MAXWAY_IIKO_LOGIN ga qo'yish "
+                    "— qolgan hammasi shundayligicha ishlaydi; yoki "
+                    "(2) shu apiKey uchun appId (GUID) va clientSecret ni "
+                    "MAXWAY_IIKO_APP_ID / MAXWAY_IIKO_CLIENT_SECRET ga yozish "
+                    "(yoki iiko_login.txt ga appId=... / clientSecret=... qatorlari)."
                 ) from e
             raise
 
