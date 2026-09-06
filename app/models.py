@@ -309,3 +309,16 @@ class IikoWebhookEvent(Base):
     authorized = Column(Boolean, default=False)   # token to'g'ri keldimi
     note = Column(String(200), default="")        # tahlil izohi / xato sababi
     body = Column(Text, default="")               # xom JSON (kesilgan)
+
+
+class IikoWebhookSkip(Base):
+    """Jurnalga yozilmagan hodisalar sanog'i (zakaz, rezerv, smena).
+
+    Sanoq nega bazada: ilova bir nechta worker'da ishlaydi (WEB_CONCURRENCY=2),
+    xotiradagi sanoq har bir worker'da alohida edi va /api/iiko/webhook-log
+    tasodifan qaysi worker'ga tushsa o'shaning sanog'ini ko'rsatardi — son goh
+    o'sib, goh kamayib turardi. Endi hamma worker bitta qatorni oshiradi."""
+    __tablename__ = "iiko_webhook_skips"
+    event_type = Column(String(64), primary_key=True)
+    n = Column(Integer, default=0)
+    last_at = Column(DateTime, nullable=True)      # oxirgi marta qachon kelgan

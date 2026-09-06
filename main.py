@@ -2717,7 +2717,25 @@ IIKO_WEBHOOK_SKIP_TYPES = {
     "reserveupdate", "reserveerror",
     "personalshiftupdate",
 }
-_iiko_webhook_skipped = {}       # {eventType: nechta marta o'tkazib yuborildi}
+
+
+def _iiko_webhook_count_skip(db: Session, event_type: str):
+    """O'tkazib yuborilgan hodisani sanaydi (iiko_webhook_skips jadvalida).
+
+    Sanoq xotirada emas, bazada: WEB_CONCURRENCY=2 bo'lgani uchun xotiradagi
+    sanoq har worker'da alohida chiqib, jurnal goh o'sib goh kamayib ko'rinardi.
+    Sanoq faqat diagnostika uchun — xato bo'lsa hodisa qabuli buzilmasin."""
+    t = (event_type or "?")[:64]
+    now = models.tashkent_now()
+    try:
+        res = db.execute(sqltext(
+            "UPDATE iiko_webhook_skips SET n = n + 1, last_at = :at "
+            "WHERE event_type = :t"), {"at": now, "t": t})
+        if (res.rowcount or 0) == 0:
+            db.add(models.IikoWebhookSkip(event_type=t, n=1, last_at=now))
+        db.commit()
+    except Exception:
+        db.rollback()       # bir vaqtda ikki worker qo'shsa — keyingisida sanaladi
 
 
 def _iiko_webhook_authorized(request: Request) -> bool:
@@ -2800,8 +2818,7 @@ async def iiko_webhook(request: Request, db: Session = Depends(get_db)):
     keep = []
     for r in rows:
         if r["event_type"].lower() in IIKO_WEBHOOK_SKIP_TYPES:
-            t = r["event_type"]
-            _iiko_webhook_skipped[t] = _iiko_webhook_skipped.get(t, 0) + 1
+            _iiko_webhook_count_skip(db, r["event_type"])
             continue
         keep.append(r)
     if not keep:
@@ -3534,7 +3551,12 @@ def api_iiko_webhook_log(request: Request, limit: int = 20,
         "token_set": bool(IIKO_WEBHOOK_TOKEN),
         "total": db.query(func.count(models.IikoWebhookEvent.id)).scalar() or 0,
         # jurnalga yozilmagan zakaz hodisalari — trafik bor-yo'qligini ko'rsatadi
-        "skipped": dict(_iiko_webhook_skipped),
+        "skipped": {k.event_type: k.n or 0 for k in
+                    db.query(models.IikoWebhookSkip).all()},
+        "skipped_last_at": (lambda k: k.last_at.strftime("%d.%m.%Y %H:%M:%S")
+                            if k and k.last_at else None)(
+            db.query(models.IikoWebhookSkip).order_by(
+                models.IikoWebhookSkip.last_at.desc()).first()),
         "events": [{
             "id": e.id,
             "at": e.received_at.strftime("%d.%m.%Y %H:%M:%S") if e.received_at else "",

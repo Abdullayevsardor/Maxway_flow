@@ -21,6 +21,7 @@ import main
 @pytest.fixture(autouse=True)
 def clean_log(db):
     db.query(models.IikoWebhookEvent).delete()
+    db.query(models.IikoWebhookSkip).delete()
     db.commit()
     yield
 
@@ -105,7 +106,6 @@ def test_zakaz_hodisalari_jurnalga_yozilmaydi(client, db, monkeypatch):
     """22 filialdan oqib keladigan zakazlar bazani to'ldirmasin — faqat sanaladi.
     iikoWeb filtri noto'g'ri sozlansa ham himoya shu yerda ishlaydi."""
     monkeypatch.setattr(main, "IIKO_WEBHOOK_TOKEN", "s3cret")
-    monkeypatch.setattr(main, "_iiko_webhook_skipped", {})
     r = client.post("/iiko/webhook", json=[
         {"eventType": "DeliveryOrderUpdate", "organizationId": "org-1"},
         {"eventType": "TableOrderUpdate", "organizationId": "org-1"},
@@ -114,7 +114,20 @@ def test_zakaz_hodisalari_jurnalga_yozilmaydi(client, db, monkeypatch):
     assert r.status_code == 200
     rows = _events(db)
     assert [e.event_type for e in rows] == ["StopListUpdate"]
-    assert main._iiko_webhook_skipped == {"DeliveryOrderUpdate": 1, "TableOrderUpdate": 1}
+    db.expire_all()
+    assert {k.event_type: k.n for k in db.query(models.IikoWebhookSkip).all()} ==         {"DeliveryOrderUpdate": 1, "TableOrderUpdate": 1}
+
+
+def test_sanoq_bazada_toplanadi(client, db, monkeypatch):
+    """Sanoq worker xotirasida emas, bazada — takror kelganda o'sib boradi
+    (ilgari WEB_CONCURRENCY=2 sababli son goh o'sib goh kamayib ko'rinardi)."""
+    monkeypatch.setattr(main, "IIKO_WEBHOOK_TOKEN", "s3cret")
+    for _ in range(3):
+        client.post("/iiko/webhook", json=[{"eventType": "DeliveryOrderUpdate"}],
+                    headers={"Authorization": "s3cret"})
+    db.expire_all()
+    row = db.get(models.IikoWebhookSkip, "DeliveryOrderUpdate")
+    assert row is not None and row.n == 3 and row.last_at is not None
 
 
 def test_notanish_tur_jurnalga_tushadi(client, db, monkeypatch):
