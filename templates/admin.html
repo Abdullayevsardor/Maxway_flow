@@ -98,7 +98,7 @@
       <input type="text" id="branchSearch" class="inp" placeholder="🔍 Поиск филиала (название, адрес)..."
              oninput="filterRows(this,'branchRows')" style="width:100%;max-width:420px">
     </th></tr>
-    <tr><th>Название</th><th>Локация (адрес)</th><th>Логин филиала</th><th></th></tr></thead>
+    <tr><th>Название</th><th>Локация (адрес)</th><th>Логин филиала</th><th>iiko</th><th></th></tr></thead>
     <tbody id="branchRows">
       {% for b in branches %}
       <tr>
@@ -108,9 +108,14 @@
           {% if branch_logins.get(b.id) %}<span style="color:#334155">{{ branch_logins[b.id] }}</span>
           {% else %}<span style="color:#dc2626;font-weight:600">нет логина</span>{% endif %}
         </td>
+        <td data-label="iiko">
+          {% if b.iiko_terminal_id %}
+            <span style="color:#16a34a;font-weight:600" title="{{ b.iiko_terminal_id }}">✓ {{ b.iiko_terminal_name or "связан" }}</span>
+          {% else %}<span style="color:#94a3b8">не связан</span>{% endif %}
+        </td>
         <td data-label="" style="text-align:right;white-space:nowrap">
           <button class="btn btn-light" style="padding:7px 12px"
-            onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or "","phone":b.phone or "","director_name":b.director_name or "","tg_chat_ids":b.tg_chat_ids or "","login_email":branch_logins.get(b.id, "")}|tojson }})'>✏ Изменить</button>
+            onclick='editBranch({{ {"id":b.id,"name":b.name,"location":b.location or "","phone":b.phone or "","director_name":b.director_name or "","tg_chat_ids":b.tg_chat_ids or "","login_email":branch_logins.get(b.id, ""),"iiko_terminal_id":b.iiko_terminal_id or "","iiko_org_id":b.iiko_org_id or "","iiko_terminal_name":b.iiko_terminal_name or ""}|tojson }})'>✏ Изменить</button>
           {% set st = branch_stats.get(b.id, {}) %}
           <form method="post" action="/admin/branches/{{ b.id }}/delete" style="display:inline"
                 onsubmit="return confirm('Удалить филиал «{{ b.name }}»?\n\n'
@@ -124,7 +129,7 @@
           </form>
         </td>
       </tr>
-      {% else %}<tr><td colspan="4" class="empty">Филиалы не добавлены</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="5" class="empty">Филиалы не добавлены</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>
@@ -327,6 +332,17 @@
       <div class="field"><label>Telegram ID сотрудников <span style="color:#94a3b8;font-weight:400">(через запятую — все получат комментарии и решения)</span></label>
         <input type="text" name="tg_chat_ids" id="b_tg_ids" placeholder="123456789, 987654321"></div>
       <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px">
+        <p style="font-weight:500;color:#475569;margin-bottom:10px;font-size:13px">🍽 Связь с iiko — стоп-лист филиала берётся из этой терминальной группы</p>
+        <div class="field">
+          <select name="iiko_bind" id="b_iiko"><option value="">— не связан —</option></select>
+          <!-- iiko javob bermasa: GUID ni qo'lda kiritish (disabled maydon yuborilmaydi) -->
+          <input type="text" name="iiko_bind" id="b_iiko_manual" disabled
+                 style="display:none;margin-top:8px"
+                 placeholder="terminalGroupId|organizationId|название">
+          <div id="b_iiko_note" style="display:none;margin-top:6px;font-size:12px;color:#b45309"></div>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px">
         <p style="font-weight:500;color:#475569;margin-bottom:10px;font-size:13px">🔑 Доступ для филиала — логин филиала видит только свои заявки</p>
         <div style="display:flex;gap:12px">
           <div class="field" style="flex:1"><label>Email (логин)</label>
@@ -430,7 +446,51 @@
     document.getElementById('b_tg_ids').value=d.tg_chat_ids||'';
     document.getElementById('b_login').value=d.login_email||'';
     document.getElementById('b_password').value='';
+    loadIikoTerminals(d);
     open_('branchEdit');
+  }
+
+  // iiko terminal guruhlari — bir marta yuklanadi va keshlanadi
+  var iikoCache=null;
+  function loadIikoTerminals(d){
+    var sel=document.getElementById('b_iiko'), manual=document.getElementById('b_iiko_manual'),
+        note=document.getElementById('b_iiko_note');
+    var cur=[d.iiko_terminal_id||'', d.iiko_org_id||'', d.iiko_terminal_name||''].join('|');
+    function fill(data){
+      if(!data.ok){
+        // iiko javob bermadi — GUID ni qo'lda kiritish rejimi
+        sel.style.display='none'; sel.disabled=true;
+        manual.style.display='block'; manual.disabled=false;
+        manual.value=(d.iiko_terminal_id? cur : '');
+        note.style.display='block';
+        note.textContent='iiko недоступен: '+(data.error||'')+' — ID можно ввести вручную';
+        return;
+      }
+      sel.style.display=''; sel.disabled=false;
+      manual.style.display='none'; manual.disabled=true;
+      note.style.display='none';
+      sel.innerHTML='<option value="">— не связан —</option>';
+      var found=false;
+      data.groups.forEach(function(g){
+        var o=document.createElement('option');
+        o.value=[g.id,g.org_id,g.name].join('|');
+        o.textContent=g.name+(g.address? ' — '+g.address : '')+'  ['+g.org_name+']';
+        if(g.id===(d.iiko_terminal_id||'')){o.selected=true;found=true;}
+        sel.appendChild(o);
+      });
+      if(!found && d.iiko_terminal_id){
+        // eski bog'lanish iiko'da endi yo'q — yo'qotmaslik uchun ko'rsatib turamiz
+        var o=document.createElement('option');
+        o.value=cur; o.selected=true;
+        o.textContent=(d.iiko_terminal_name||d.iiko_terminal_id)+' (нет в iiko)';
+        sel.appendChild(o);
+      }
+    }
+    if(iikoCache){ fill(iikoCache); return; }
+    sel.innerHTML='<option value="">Загрузка из iiko…</option>';
+    fetch('/api/iiko/terminals').then(r=>r.json()).then(function(data){
+      iikoCache=data; fill(data);
+    }).catch(function(e){ fill({ok:false, error:String(e)}); });
   }
 
   // amaldan (delete/save) keyin sahifa boshiga sakramasligi uchun scroll holatini saqlaymiz

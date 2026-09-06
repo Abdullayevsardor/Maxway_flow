@@ -8,6 +8,11 @@
     <p>{% if is_client %}Отметьте блюда, которых нет в наличии{% else %}Блюда на стопе по филиалам{% endif %}</p></div>
   <div class="head-actions">
     {% if can_add %}<a href="/stoplist/new" class="btn btn-blue">＋ Добавить</a>{% endif %}
+    {% if iiko_on and user.role.value == 'admin' %}
+    <form method="post" action="/stoplist/iiko/sync" style="display:inline">
+      <button class="btn btn-light" title="Не дожидаясь автоматической синхронизации">⟳ Обновить из iiko</button>
+    </form>
+    {% endif %}
     {% if can_export %}
     <a href="/stoplist/export?mode=active{% if qs %}&{{ qs }}{% endif %}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"
        class="btn btn-light">Экспорт в Excel</a>
@@ -54,13 +59,17 @@
       <tbody>
         {% for e in entries %}
         {# butun qator bosiladigan — yozuv sahifasiga o'tadi #}
+        {# iiko boshqaradigan yozuvni qo'lda olib bo'lmaydi — u yerda tanlov ham yo'q #}
+        {% set row_resolve = can_resolve and can_resolve_row(user, e) %}
         <tr class="row-link" data-href="/stoplist/{{ e.id }}" tabindex="0">
           {% if can_resolve %}
           <td data-label="" class="pick-cell">
+            {% if row_resolve %}
             <label class="pick" title="Выбрать">
               <input type="checkbox" name="sid" value="{{ e.id }}" onchange="syncPicked()">
               <span class="pick-box"></span>
             </label>
+            {% endif %}
           </td>
           {% endif %}
           <td data-label="Добавлено" class="when-cell">
@@ -74,7 +83,7 @@
           <td data-label="Причина"><span class="reason-tag">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
           {{ sp.confirm_cell(e, can_confirm) }}
           {{ sp.comment_cell(e, can_comment) }}
-          {% if can_resolve or can_comment %}{{ sp.action_cell(e, can_resolve, can_comment) }}{% endif %}
+          {% if can_resolve or can_comment %}{{ sp.action_cell(e, row_resolve, can_comment) }}{% endif %}
         </tr>
         {% endfor %}
       </tbody>
@@ -93,7 +102,7 @@
 
     {# Qator formalari — ommaviy formadan TASHQARIDA (forma ichida forma bo'lmaydi).
        Yuqoridagi tugmalar bularga form="..." atributi orqali bog'langan. #}
-    {% for e in entries %}{{ sp.row_forms(e, can_confirm, can_comment, can_resolve) }}{% endfor %}
+    {% for e in entries %}{{ sp.row_forms(e, can_confirm, can_comment, can_resolve and can_resolve_row(user, e)) }}{% endfor %}
 
     {{ sp.pager('/stoplist', qs, pg, sort_by, sort_order) }}
     {% endif %}

@@ -16,7 +16,7 @@ from sqlalchemy import func, or_, text as sqltext
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db, SessionLocal
-from app import models, auth
+from app import models, auth, iiko
 from app.models import Role, Status, Priority
 
 print(">>> [MAXWAY] create_all boshlandi", flush=True)
@@ -40,6 +40,11 @@ def _ensure_columns():
               ("stop_entries", "confirmed_at", "TIMESTAMP"),
               ("stop_entries", "updated_by", "INTEGER"),
               ("stop_entries", "updated_at", "TIMESTAMP"),
+              ("stop_entries", "source", "VARCHAR(10) DEFAULT 'manual'"),
+              ("branches", "iiko_terminal_id", "VARCHAR(64) DEFAULT ''"),
+              ("branches", "iiko_org_id", "VARCHAR(64) DEFAULT ''"),
+              ("branches", "iiko_terminal_name", "VARCHAR(160) DEFAULT ''"),
+              ("branches", "iiko_synced_at", "TIMESTAMP"),
               ("users", "perms", "TEXT"),
               ("requests", "dep_number", "INTEGER")]
     try:
@@ -69,7 +74,10 @@ def _ensure_indexes():
            ("stop_entries", "ix_stop_entries_supply_confirmed", "supply_confirmed"),
            ("stop_entries", "ix_stop_entries_resolved", "resolved"),
            # ro'yxat doim (resolved + sana) bo'yicha o'qiladi — kompozit indeks
-           ("stop_entries", "ix_stop_entries_resolved_created", "resolved, created_at")]
+           ("stop_entries", "ix_stop_entries_resolved_created", "resolved, created_at"),
+           ("stop_entries", "ix_stop_entries_source", "source"),
+           ("menu_items", "ix_menu_items_ext_id", "ext_id"),
+           ("branches", "ix_branches_iiko_terminal_id", "iiko_terminal_id")]
     try:
         insp = sa_inspect(engine)
         tables = insp.get_table_names()
@@ -221,6 +229,8 @@ def is_protected_user(u) -> bool:
 PROTECTED_EMAILS = _protected_emails()
 # Stop-list sabablari (spravochnik). Yangi yozuvlar shu ro'yxatdan tanlanadi.
 REASON_LABELS = {
+    # iiko sabab bermaydi — yangi yozuv shu kalit bilan tushadi, keyin odam aniqlaydi
+    "not_set": "Причина не указана",
     "equipment_broken": "Сломалось оборудование",
     "supplier_no_product": "Нет продукта у поставщика",
     "wrong_order": "Неправильный заказ",
@@ -233,6 +243,12 @@ REASON_LABELS = {
     "tech_problem": "Технический проблема",
 }
 CONFIRM_LABELS = {True: "ДА", False: "НЕТ"}
+# iiko avtomatik yozuvi shu sabab bilan tushadi (keyin edit_stop ruxsatli odam aniqlaydi)
+REASON_NOT_SET = "not_set"
+# yozuv manbasi: iiko avtomatikasi yoki eski qo'lda kiritilgan yozuv
+SOURCE_IIKO = "iiko"
+SOURCE_MANUAL = "manual"
+SOURCE_LABELS = {SOURCE_IIKO: "iiko (автоматически)", SOURCE_MANUAL: "вручную"}
 # Stop-list ro'yxati: sahifalash va saralash
 STOP_PAGE_SIZES = (10, 25, 50, 100)
 STOP_PAGE_SIZE_DEFAULT = 25
@@ -254,6 +270,7 @@ templates.env.globals.update(
     STATUS_LABELS=STATUS_LABELS, PRIORITY_LABELS=PRIORITY_LABELS,
     ROLE_LABELS=ROLE_LABELS, REASON_LABELS=REASON_LABELS,
     CONFIRM_LABELS=CONFIRM_LABELS, STOP_PAGE_SIZES=STOP_PAGE_SIZES,
+    SOURCE_LABELS=SOURCE_LABELS, REASON_NOT_SET=REASON_NOT_SET,
     confirm_label=lambda v: CONFIRM_LABELS[bool(v)],
     APP_NAME="MAXWAY", now=datetime.utcnow,
 )
@@ -1355,6 +1372,7 @@ def admin_page(request: Request, ok: str = "", err: str = "",
         "branches": db.query(models.Branch).order_by(models.Branch.name).all(),
         "req_counts": req_counts, "branch_logins": branch_logins,
         "branch_stats": branch_stats,
+        "iiko_on": iiko.iiko_enabled(),
         "ok_msg": ok, "err_msg": err,
     })
 
@@ -1702,11 +1720,29 @@ def admin_branch_delete(bid: int, request: Request, db: Session = Depends(get_db
     return RedirectResponse("/admin?ok=" + urllib.parse.quote(msg + "."), 302)
 
 
+def _apply_iiko_bind(branch, raw: str):
+    """Formadan kelgan «terminalGroupId|organizationId|nomi» ni filialga yozadi.
+
+    Bo'sh qiymat — bog'lanish uziladi (filial yana iiko'dan ajraladi).
+    Terminal guruh o'zgarsa iiko_synced_at tozalanadi: yangi bog'lanishning
+    birinchi sinxroni telegramga to'kilib ketmasin."""
+    parts = [p.strip() for p in (raw or "").split("|")]
+    tg = parts[0] if parts else ""
+    org = parts[1] if len(parts) > 1 else ""
+    nm = parts[2] if len(parts) > 2 else ""
+    if tg != (branch.iiko_terminal_id or ""):
+        branch.iiko_synced_at = None
+    branch.iiko_terminal_id = tg
+    branch.iiko_org_id = org
+    branch.iiko_terminal_name = nm[:160]
+
+
 @app.post("/admin/branches/{bid}/edit")
 def admin_branch_edit(bid: int, request: Request, name: str = Form(...),
                       location: str = Form(""), phone: str = Form(""),
                       director_name: str = Form(""), login_email: str = Form(""),
                       password: str = Form(""), tg_chat_ids: str = Form(""),
+                      iiko_bind: str = Form(None),
                       db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role != Role.admin:
@@ -1718,6 +1754,8 @@ def admin_branch_edit(bid: int, request: Request, name: str = Form(...),
         b.phone = phone.strip()
         b.director_name = director_name.strip()
         b.tg_chat_ids = tg_chat_ids.strip()
+        if iiko_bind is not None:
+            _apply_iiko_bind(b, iiko_bind)
         # filial logini (client akkaunt)
         login_email = login_email.lower().strip()
         client = db.query(models.User).filter(
@@ -1840,8 +1878,20 @@ def has_perm(user, key):
 
 # shablonlarда `can(user, 'create_request')` sifatida ishlatiladi
 templates.env.globals["can"] = has_perm
+# jadvalda har bir qator uchun: shu yozuvni stopdan olsa bo'ladimi
+# (iiko boshqaradigan yozuvlarda tugma umuman ko'rsatilmaydi)
+templates.env.globals["can_resolve_row"] = lambda user, e: _can_resolve_entry(user, e)
 templates.env.globals["is_protected_user"] = is_protected_user
 templates.env.globals["PERMISSION_DEFS"] = PERMISSION_DEFS
+
+
+def branch_is_iiko(db: Session, branch_id) -> bool:
+    """Filial iiko terminal guruhiga bog'langanmi — bog'langan bo'lsa uning
+    stop-listi avtomatik to'ladi va qo'lda qo'shishga ruxsat berilmaydi."""
+    if not branch_id:
+        return False
+    b = db.get(models.Branch, branch_id)
+    return bool(b and (b.iiko_terminal_id or "").strip())
 
 
 def can_see_stoplist(user):
@@ -2081,6 +2131,20 @@ def _touch_stop(e, user):
     e.updated_at = models.tashkent_now()
 
 
+def _add_blocked_by_iiko(db: Session, user) -> bool:
+    """Qo'lda qo'shish tugmasi ko'rsatilmaydimi.
+
+    Filial logini uchun — o'z filiali iiko'ga bog'langan bo'lsa. Boshqalar
+    (admin, снабжение) uchun — hamma filial bog'langan bo'lsa: bog'lanmagan
+    filial qolgan bo'lsa ularga qo'lda qo'shish hali kerak."""
+    if user.role == Role.client:
+        return branch_is_iiko(db, user.user_branch_id)
+    total = db.query(models.Branch).count()
+    if not total:
+        return False
+    return len(iiko_linked_branches(db)) == total
+
+
 def _stoplist_context(request: Request, db: Session, user, resolved: bool,
                       branch_id, menu_item_id, reason, confirmed,
                       date_from, date_to, month, sort_by, sort_order, page, page_size):
@@ -2117,8 +2181,10 @@ def _stoplist_context(request: Request, db: Session, user, resolved: bool,
         "has_filters": has_filters,
         "sort_by": sort_by, "sort_order": sort_order, "qs": qs,
         "cur_month": models.tashkent_now().strftime("%Y-%m"),
-        "can_add": has_perm(user, "add_stop"),
+        # iiko boshqaradigan filialga qo'lda qo'shilmaydi — ro'yxat avtomatik to'ladi
+        "can_add": has_perm(user, "add_stop") and not _add_blocked_by_iiko(db, user),
         "can_resolve": has_perm(user, "resolve_stop"),
+        "iiko_on": iiko.iiko_enabled(),
         "can_comment": has_perm(user, "comment_stop"),
         "can_confirm": has_perm(user, "confirm_stop"),
         "can_edit": has_perm(user, "edit_stop") or user.role == Role.admin,
@@ -2288,7 +2354,11 @@ def notify_stop_added(db: Session, created, actor):
         lines.append(f" • …и ещё {more}")
     if first.comment:
         lines.append(f"💬 Комментарий филиала: {first.comment}")
-    lines.append(f"👤 Добавил: {display_name(actor)}")
+    # iiko avtomatikasida «kim qo'shgani» yo'q — manbani ko'rsatamiz
+    lines.append(f"👤 Добавил: {display_name(actor)}" if actor
+                 else "🤖 Источник: iiko (автоматически)")
+    if first.reason == REASON_NOT_SET:
+        lines.append("❗️ Причина не указана — уточните на сайте")
     lines.append(f"🕑 {first.created_at.strftime('%d.%m.%Y %H:%M')}"
                  if first.created_at else "")
     text = "\n".join(l for l in lines if l != "")
@@ -2348,13 +2418,278 @@ def notify_stop_resolved(db: Session, entries, actor):
             if more > 0:
                 lines.append(f" • …и ещё {more}")
             link = "/stoplist/history"
-        lines.append(f"👤 Снял: {display_name(actor)}")
+        lines.append(f"👤 Снял: {display_name(actor)}" if actor
+                     else "🤖 Снято автоматически (iiko)")
         done_at = items[0].resolved_at
         if done_at:
             lines.append(f"🕑 {done_at.strftime('%d.%m.%Y %H:%M')}")
         _send_async(stop_notify_targets(db, br_id, actor),
                     "\n".join(lines), button_url=f"{get_app_url()}{link}",
                     token=get_stop_bot_token())
+
+
+def notify_stop_reason_set(db: Session, e, actor, old_reason: str):
+    """Sabab aniqlanganda telegram xabari.
+
+    iiko sabab bermaydi — yozuv «Причина не указана» bilan tushadi. Keyin
+    edit_stop ruxsatli odam sababni qo'yadi va shu xabar ketadi."""
+    if not e or e.resolved:
+        return
+    if old_reason != REASON_NOT_SET or e.reason == REASON_NOT_SET:
+        return          # faqat «не указана» → aniq sabab o'tishida
+    branch = e.branch or db.get(models.Branch, e.branch_id)
+    lines = ["🏷 <b>Причина стопа уточнена — MAXWAY</b>", "",
+             f"🏢 Филиал: <b>{branch.name if branch else '—'}</b>",
+             f"🍽 Блюдо: <b>{e.menu_item.name if e.menu_item else '—'}</b>",
+             f"🏷 Причина: <b>{REASON_LABELS.get(e.reason, e.reason)}</b>"]
+    if e.comment:
+        lines.append(f"💬 Комментарий филиала: {e.comment}")
+    lines.append(f"👤 Указал: {display_name(actor)}")
+    lines.append(f"🕑 {models.tashkent_now().strftime('%d.%m.%Y %H:%M')}")
+    _send_async(stop_notify_targets(db, e.branch_id, actor), "\n".join(lines),
+                button_url=f"{get_app_url()}/stoplist/{e.id}",
+                token=get_stop_bot_token())
+
+
+# ===================== iiko: avtomatik stop-list =====================
+# Stop-list endi qo'lda emas, iikoCloud'dan keladi. Har MAXWAY_IIKO_INTERVAL
+# soniyada (standart 120) iiko'dagi holat baza bilan solishtiriladi: yangi
+# pozitsiya stopga qo'shiladi, yo'qolgani stopdan olinadi.
+# iiko sabab bermaydi — yangi yozuv REASON_NOT_SET bilan tushadi, sababni keyin
+# edit_stop ruxsatli odam qo'yadi.
+IIKO_INTERVAL = max(30, int(os.environ.get("MAXWAY_IIKO_INTERVAL", "120")))
+IIKO_LOCK_SECONDS = IIKO_INTERVAL + 60      # qulf sikldan uzun — osilib qolsa ham bo'shaydi
+_IIKO_OWNER = f"pid{os.getpid()}-{os.urandom(3).hex()}"
+
+
+def iiko_sync_state(db: Session):
+    """iiko_sync jadvalining yagona qatori (bo'lmasa yaratadi)."""
+    st = db.get(models.IikoSync, 1)
+    if st is None:
+        db.add(models.IikoSync(id=1, last_ok=True, last_error=""))
+        try:
+            db.commit()
+        except Exception:       # boshqa worker bir vaqtda yaratgan bo'lishi mumkin
+            db.rollback()
+        st = db.get(models.IikoSync, 1)
+    return st
+
+
+def _iiko_try_lock(db: Session) -> bool:
+    """Qulfni olishga urinish. Bitta atomar UPDATE — SQLite'da ham, Postgres'da
+    ham bir vaqtda faqat bitta worker muvaffaqiyat qozonadi (WEB_CONCURRENCY=2)."""
+    iiko_sync_state(db)
+    now = models.tashkent_now()
+    res = db.execute(sqltext(
+        "UPDATE iiko_sync SET lock_owner=:owner, lock_until=:until "
+        "WHERE id=1 AND (lock_until IS NULL OR lock_until < :now)"),
+        {"owner": _IIKO_OWNER, "until": now + timedelta(seconds=IIKO_LOCK_SECONDS),
+         "now": now})
+    db.commit()
+    return (res.rowcount or 0) == 1
+
+
+def _iiko_release_lock(db: Session, ok: bool, error: str = "",
+                       added: int = 0, resolved: int = 0):
+    """Qulfni bo'shatadi va oxirgi natijani yozadi."""
+    try:
+        db.execute(sqltext(
+            "UPDATE iiko_sync SET lock_until=NULL, lock_owner='', last_run_at=:at, "
+            "last_ok=:ok, last_error=:err, last_added=:added, last_resolved=:res "
+            "WHERE id=1 AND lock_owner=:owner"),
+            {"at": models.tashkent_now(), "ok": bool(ok), "err": (error or "")[:500],
+             "added": added, "res": resolved, "owner": _IIKO_OWNER})
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(">>> [MAXWAY] iiko qulfni bo'shatish xato:", e, flush=True)
+
+
+def _iiko_menu_items(db: Session, product_ids, names: dict) -> dict:
+    """{productId: MenuItem} — bazada yo'q taomlar avtomatik yaratiladi.
+
+    To'liq menyu sinxronizatsiyasi qilinmaydi: faqat stopga tushgan pozitsiya
+    MenuItem sifatida paydo bo'ladi."""
+    pids = [p for p in product_ids if p]
+    if not pids:
+        return {}
+    found = {}
+    for i in range(0, len(pids), 400):      # IN (...) juda uzun bo'lmasin
+        chunk = pids[i:i + 400]
+        for mi in db.query(models.MenuItem).filter(models.MenuItem.ext_id.in_(chunk)).all():
+            found[mi.ext_id] = mi
+    fresh = 0
+    for pid in pids:
+        mi = found.get(pid)
+        new_name = (names.get(pid) or "").strip()
+        if mi is not None:
+            if new_name and mi.name != new_name:    # iiko'da nom o'zgargan
+                mi.name = new_name
+            if not mi.is_active:
+                mi.is_active = True
+            continue
+        mi = models.MenuItem(name=new_name or f"iiko {pid[:8]}", ext_id=pid, is_active=True)
+        db.add(mi)
+        found[pid] = mi
+        fresh += 1
+    if fresh:
+        print(f">>> [MAXWAY] iiko: {fresh} ta yangi taom menyuga qo'shildi", flush=True)
+    db.flush()
+    return found
+
+
+def iiko_linked_branches(db: Session):
+    """iiko terminal guruhiga bog'langan filiallar."""
+    return db.query(models.Branch).filter(
+        models.Branch.iiko_terminal_id.isnot(None),
+        models.Branch.iiko_terminal_id != "").all()
+
+
+def _iiko_sync_branch(db: Session, branch, current_pids: set, items: dict):
+    """Bitta filialning stop-listini iiko holatiga keltiradi.
+
+    Birinchi sinxronizatsiyada (branch.iiko_synced_at bo'sh) telegram JIM turadi —
+    aks holda iiko'da turgan hamma stop bir vaqtda kanalga to'kilib ketardi."""
+    silent = branch.iiko_synced_at is None
+    active = db.query(models.StopEntry).filter(
+        models.StopEntry.branch_id == branch.id,
+        models.StopEntry.resolved == False).all()
+
+    by_pid = {}
+    for e in active:
+        mi = e.menu_item or db.get(models.MenuItem, e.menu_item_id)
+        pid = (mi.ext_id or "") if mi else ""
+        if pid:
+            by_pid[pid] = e
+
+    now = models.tashkent_now()
+    created, closed = [], []
+    for pid in current_pids - set(by_pid):
+        mi = items.get(pid)
+        if mi is None:
+            continue
+        e = models.StopEntry(
+            branch_id=branch.id, menu_item_id=mi.id, reason=REASON_NOT_SET,
+            comment="", supply_comment="", supply_confirmed=False,
+            source=SOURCE_IIKO, created_by=None, created_at=now)
+        db.add(e)
+        created.append(e)
+
+    for pid, e in by_pid.items():
+        if pid in current_pids:
+            # qo'lda kiritilgan yozuv iiko'da ham chiqdi — dublikat yaratmay,
+            # mavjud yozuvni avtomatikaga o'tkazamiz (tarixi saqlanadi)
+            if (e.source or SOURCE_MANUAL) != SOURCE_IIKO:
+                e.source = SOURCE_IIKO
+            continue
+        if (e.source or SOURCE_MANUAL) != SOURCE_IIKO:
+            continue                    # eski qo'lda yozuvga tegmaymiz — tarixda qoladi
+        e.resolved = True
+        e.resolved_at = now
+        closed.append(e)
+
+    branch.iiko_synced_at = now
+    db.flush()
+    if silent:
+        if created or closed:
+            print(f">>> [MAXWAY] iiko: «{branch.name}» birinchi sinxron — "
+                  f"{len(created)} stop, {len(closed)} yechim (telegram jim)", flush=True)
+    else:
+        if created:
+            notify_stop_added(db, created, None)
+        if closed:
+            notify_stop_resolved(db, closed, None)
+    return len(created), len(closed)
+
+
+def iiko_sync_once(db: Session) -> dict:
+    """Bitta sinxronizatsiya sikli. Qaytadi: natija lug'ati (diagnostika uchun).
+
+    Xavfsizlik qoidasi: terminal guruh javobda umuman bo'lmasa (kassa o'chiq,
+    aloqa yo'q) — o'sha filialga TEGILMAYDI. Aks holda hamma taom noto'g'ri
+    stopdan olinib ketardi."""
+    branches = iiko_linked_branches(db)
+    if not branches:
+        return {"ok": True, "added": 0, "resolved": 0, "branches": 0, "offline": [],
+                "skipped": "Ни один филиал не связан с iiko"}
+
+    client = iiko.get_client()
+    org_ids = sorted({(b.iiko_org_id or "").strip()
+                      for b in branches if (b.iiko_org_id or "").strip()})
+    if not org_ids:
+        org_ids = [o["id"] for o in client.organizations() if o.get("id")]
+    stops = client.stop_lists(org_ids)          # {terminalGroupId: {productId: balance}}
+
+    wanted = set()
+    for b in branches:
+        wanted |= set(stops.get(b.iiko_terminal_id) or {})
+    names = client.resolve_names(org_ids, wanted) if wanted else {}
+    items = _iiko_menu_items(db, wanted, names)
+
+    added_n, resolved_n, offline = 0, 0, []
+    for b in branches:
+        tg = b.iiko_terminal_id
+        if tg not in stops:
+            offline.append(b.name)
+            continue
+        a, r = _iiko_sync_branch(db, b, set(stops[tg]), items)
+        added_n += a
+        resolved_n += r
+    db.commit()
+    if offline:
+        print(f">>> [MAXWAY] iiko: javob bermagan filiallar — {', '.join(offline)}", flush=True)
+    return {"ok": True, "added": added_n, "resolved": resolved_n,
+            "branches": len(branches), "offline": offline}
+
+
+def iiko_sync_locked(db: Session) -> dict:
+    """Qulf bilan bitta sikl. Boshqa worker ishlayotgan bo'lsa — o'tkazib yuboradi."""
+    if not iiko.iiko_enabled():
+        return {"ok": False, "error": "apiKey не задан (MAXWAY_IIKO_LOGIN)"}
+    if not _iiko_try_lock(db):
+        return {"ok": True, "added": 0, "resolved": 0,
+                "skipped": "Синхронизация уже идёт в другом процессе"}
+    try:
+        res = iiko_sync_once(db)
+        _iiko_release_lock(db, True, "", res.get("added", 0), res.get("resolved", 0))
+        return res
+    except Exception as e:
+        db.rollback()
+        _iiko_release_lock(db, False, str(e))
+        print(">>> [MAXWAY] iiko sync xato:", e, flush=True)
+        return {"ok": False, "error": str(e)}
+
+
+def _iiko_loop():
+    """Fon oqimi: har IIKO_INTERVAL soniyada sinxronizatsiya."""
+    import time
+    time.sleep(10)          # ilova to'liq ko'tarilsin
+    while True:
+        db = SessionLocal()
+        try:
+            iiko_sync_locked(db)
+        except Exception as e:
+            print(">>> [MAXWAY] iiko loop xato:", e, flush=True)
+        finally:
+            db.close()
+        time.sleep(IIKO_INTERVAL)
+
+
+def start_iiko_worker():
+    """apiKey berilgan bo'lsa fon sinxronizatsiyasini ishga tushiradi.
+    MAXWAY_IIKO_SYNC=0 bilan o'chirib qo'yish mumkin (test/lokal ish uchun)."""
+    if os.environ.get("MAXWAY_IIKO_SYNC", "1").strip() in ("0", "off", "false"):
+        print(">>> [MAXWAY] iiko sync MAXWAY_IIKO_SYNC=0 bilan o'chirilgan", flush=True)
+        return
+    if not iiko.iiko_enabled():
+        print(">>> [MAXWAY] iiko: apiKey yo'q — avtomatik sync o'chirilgan", flush=True)
+        return
+    import threading
+    threading.Thread(target=_iiko_loop, daemon=True, name="iiko-sync").start()
+    print(f">>> [MAXWAY] iiko sync ishga tushdi (har {IIKO_INTERVAL} s)", flush=True)
+
+
+start_iiko_worker()
 
 
 @app.post("/stoplist/add")
@@ -2373,6 +2708,11 @@ def stoplist_add(request: Request, menu_item_id: List[int] = Form([]),
         b_id = user.user_branch_id
     else:
         b_id = int(branch_id) if str(branch_id).isdigit() else None
+    # iiko boshqaradigan filialga qo'lda qo'shib bo'lmaydi: 2 daqiqadan keyin
+    # sinxronizatsiya uni baribir olib tashlardi
+    if branch_is_iiko(db, b_id):
+        return RedirectResponse("/stoplist?err=" + urllib.parse.quote(
+            "Стоп-лист филиала заполняется автоматически из iiko — добавлять вручную нельзя"), 302)
     # taomlar: id bo'yicha (yangi forma) yoki nomi bo'yicha (eski forma)
     ids = list(menu_item_id)
     for nm in menu_name:
@@ -2395,6 +2735,7 @@ def _apply_stop_update(db: Session, user, e, data: dict):
     """Yozuvni tahrirlash — har bir maydon o'z ruxsatiga tekshiriladi.
     Qaytadi: (o'zgardimi, xato matni yoki None, HTTP kod)."""
     changed = False
+    prev_reason = e.reason        # sabab «не указана» dan aniqqa o'tsa — xabar ketadi
     # --- filial maydonlari: причина, комментарий филиала ---
     wants_branch = any(k in data for k in ("reason", "branch_comment"))
     if wants_branch:
@@ -2431,6 +2772,7 @@ def _apply_stop_update(db: Session, user, e, data: dict):
     if changed:
         _touch_stop(e, user)
         db.commit()
+        notify_stop_reason_set(db, e, user, prev_reason)
     return changed, None, 200
 
 
@@ -2520,7 +2862,11 @@ def stoplist_resolve(sid: int, request: Request, db: Session = Depends(get_db)):
 def _can_resolve_entry(user, e) -> bool:
     """Yozuvni stopdan olish huquqi.
     MUHIM: filial (client) faqat O'Z filiali yozuvini olishi mumkin —
-    resolve_stop ruxsati unga boshqa filialga tegish huquqini bermaydi."""
+    resolve_stop ruxsati unga boshqa filialga tegish huquqini bermaydi.
+    iiko boshqaradigan yozuvni esa hech kim qo'lda olmaydi — taom iiko'dan
+    chiqqanda sinxronizatsiya o'zi oladi (aks holda 2 daqiqadan keyin qaytardi)."""
+    if e is not None and (e.source or SOURCE_MANUAL) == SOURCE_IIKO:
+        return False
     if not has_perm(user, "resolve_stop"):
         return False
     if user.role == Role.client:
@@ -2753,6 +3099,9 @@ def stoplist_new_page(request: Request, err: str = "", db: Session = Depends(get
     if not has_perm(user, "add_stop"):
         return RedirectResponse("/stoplist?err=" + urllib.parse.quote(
             "Нет прав на добавление в стоп-лист"), 302)
+    if _add_blocked_by_iiko(db, user):
+        return RedirectResponse("/stoplist?err=" + urllib.parse.quote(
+            "Стоп-лист филиала заполняется автоматически из iiko — добавлять вручную нельзя"), 302)
     is_client = user.role == Role.client
     menu_items = sorted_by_name(db.query(models.MenuItem).filter(
         models.MenuItem.is_active == True).all())
@@ -2798,8 +3147,8 @@ def stoplist_detail(sid: int, request: Request, ok: str = "", err: str = "",
         "can_edit_branch": can_edit_stop_branch_fields(user, e),
         "can_edit_supply": can_edit_stop_supply_comment(user, e),
         "can_confirm": can_confirm_stop(user, e),
-        "can_resolve": (user.role == Role.client and e.branch_id == user.user_branch_id)
-                       or has_perm(user, "resolve_stop"),
+        # tugma endpoint bilan bir xil qoidaga tayanadi — ko'rinib turib 403 bermasin
+        "can_resolve": _can_resolve_entry(user, e),
     })
 
 
@@ -2971,6 +3320,86 @@ def api_stop_reasons(request: Request, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Требуется авторизация")
     return JSONResponse([{"id": k, "name": v} for k, v in REASON_LABELS.items()])
+
+
+@app.get("/api/iiko/terminals")
+def api_iiko_terminals(request: Request, db: Session = Depends(get_db)):
+    """iiko'dagi terminal guruhlar — admin panelida filialga bog'lash uchun.
+
+    Xato bo'lsa ham 200 qaytaradi: {"ok": false, "error": ...} — admin oynasi
+    o'rniga qo'lda GUID kiritish maydonini ko'rsatadi."""
+    user = current_user(request, db)
+    if not user or user.role != Role.admin:
+        raise HTTPException(status_code=403, detail="Только для администратора")
+    if not iiko.iiko_enabled():
+        return JSONResponse({"ok": False, "error": "apiKey не задан (MAXWAY_IIKO_LOGIN)",
+                             "groups": []})
+    try:
+        client = iiko.get_client()
+        orgs = client.organizations()
+        org_names = {o.get("id"): o.get("name") for o in orgs}
+        groups = client.terminal_groups([o["id"] for o in orgs if o.get("id")])
+    except iiko.IikoError as e:
+        return JSONResponse({"ok": False, "error": str(e), "groups": []})
+    rows = []
+    for org_id, items in groups.items():
+        for t in items:
+            rows.append({"id": t.get("id", ""), "name": t.get("name", ""),
+                         "address": t.get("address", "") or "",
+                         "org_id": org_id, "org_name": org_names.get(org_id, "")})
+    rows.sort(key=lambda r: (r["org_name"] or "", r["name"] or ""))
+    return JSONResponse({"ok": True, "groups": rows})
+
+
+@app.get("/api/iiko/status")
+def api_iiko_status(request: Request, db: Session = Depends(get_db)):
+    """iiko integratsiyasining holati — sozlash to'g'rimi, oxirgi sinxron qachon."""
+    user = current_user(request, db)
+    if not user or user.role != Role.admin:
+        raise HTTPException(status_code=403, detail="Только для администратора")
+    creds = iiko.get_credentials()
+    st = iiko_sync_state(db)
+    branches = db.query(models.Branch).order_by(models.Branch.name).all()
+    return JSONResponse({
+        "enabled": iiko.iiko_enabled(),
+        "auth_mode": "v2" if creds["app_id"] and creds["client_secret"] else "v1",
+        "has_app_id": bool(creds["app_id"]),
+        "has_client_secret": bool(creds["client_secret"]),
+        "interval_sec": IIKO_INTERVAL,
+        "last_run_at": st.last_run_at.strftime("%d.%m.%Y %H:%M:%S") if st and st.last_run_at else None,
+        "last_ok": bool(st.last_ok) if st else None,
+        "last_error": (st.last_error or "") if st else "",
+        "last_added": (st.last_added or 0) if st else 0,
+        "last_resolved": (st.last_resolved or 0) if st else 0,
+        "branches": [{"id": b.id, "name": b.name,
+                      "terminal_id": b.iiko_terminal_id or "",
+                      "terminal_name": b.iiko_terminal_name or "",
+                      "synced_at": b.iiko_synced_at.strftime("%d.%m.%Y %H:%M")
+                                   if b.iiko_synced_at else None}
+                     for b in branches],
+        "linked": sum(1 for b in branches if (b.iiko_terminal_id or "").strip()),
+    })
+
+
+@app.post("/stoplist/iiko/sync")
+def stoplist_iiko_sync(request: Request, db: Session = Depends(get_db)):
+    """Sinxronizatsiyani qo'lda ishga tushirish (fon oqimini kutmasdan)."""
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    if user.role != Role.admin:
+        raise HTTPException(status_code=403, detail="Только для администратора")
+    res = iiko_sync_locked(db)
+    if not res.get("ok"):
+        msg = "Ошибка iiko: " + str(res.get("error", ""))[:200]
+        return RedirectResponse("/stoplist?err=" + urllib.parse.quote(msg), 302)
+    if res.get("skipped"):
+        return RedirectResponse("/stoplist?ok=" + urllib.parse.quote(res["skipped"]), 302)
+    msg = (f"iiko: добавлено {res.get('added', 0)}, "
+           f"снято {res.get('resolved', 0)} · филиалов: {res.get('branches', 0)}")
+    if res.get("offline"):
+        msg += " · не ответили: " + ", ".join(res["offline"][:5])
+    return RedirectResponse("/stoplist?ok=" + urllib.parse.quote(msg), 302)
 
 
 @app.get("/api/branches")

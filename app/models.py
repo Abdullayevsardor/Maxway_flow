@@ -199,6 +199,12 @@ class Branch(Base):
     director_name = Column(String(120), default="")  # filial direktori (buyurtmachi)
     # filial xodimlarining telegram chat_id lari (vergul bilan) — izoh/yechim xabari uchun
     tg_chat_ids = Column(Text, default="")
+    # iikoCloud bog'lanishi: filial = bitta terminal guruh
+    iiko_terminal_id = Column(String(64), default="", index=True)
+    iiko_org_id = Column(String(64), default="")
+    iiko_terminal_name = Column(String(160), default="")   # admin panelida ko'rsatish uchun
+    # birinchi sinxronizatsiya vaqti — o'sha safar telegram jim turadi
+    iiko_synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=tashkent_now)
 
 
@@ -232,7 +238,7 @@ class MenuItem(Base):
     __tablename__ = "menu_items"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False)
-    ext_id = Column(String(120), nullable=True)      # iiko nomenklatura ID (kelajakda sync uchun)
+    ext_id = Column(String(120), nullable=True, index=True)   # iiko productId (GUID)
     is_active = Column(Boolean, default=True)
 
 
@@ -245,6 +251,9 @@ class StopEntry(Base):
     menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"),
                           nullable=False, index=True)
     reason = Column(String(40), nullable=False, index=True)   # sabab kaliti
+    # yozuv qayerdan keldi. Standart 'manual' — odam yaratgan yozuv; iiko
+    # sinxronizatsiyasi o'z yozuvlariga 'iiko' ni aniq qo'yadi.
+    source = Column(String(10), default="manual", nullable=False, index=True)
     comment = Column(Text, default="")               # filial izohi
     supply_comment = Column(Text, default="")         # Снабжение izohi
     # Снабжение stop sababini tasdiqladimi (ДА / НЕТ)
@@ -263,3 +272,19 @@ class StopEntry(Base):
     creator = relationship("User", foreign_keys=[created_by])
     updater = relationship("User", foreign_keys=[updated_by])
     confirmer = relationship("User", foreign_keys=[confirmed_by])
+
+
+class IikoSync(Base):
+    """iiko sinxronizatsiyasining umumiy holati va qulfi (bitta qator, id=1).
+
+    Ilova bir nechta worker'da ishlaydi (WEB_CONCURRENCY) — shu qator orqali
+    bir vaqtda faqat bitta worker sync qiladi."""
+    __tablename__ = "iiko_sync"
+    id = Column(Integer, primary_key=True)
+    lock_owner = Column(String(64), default="")     # qulfni olgan worker
+    lock_until = Column(DateTime, nullable=True)    # qulf shu vaqtgacha amal qiladi
+    last_run_at = Column(DateTime, nullable=True)
+    last_ok = Column(Boolean, default=True)
+    last_error = Column(Text, default="")
+    last_added = Column(Integer, default=0)
+    last_resolved = Column(Integer, default=0)
