@@ -2706,6 +2706,19 @@ IIKO_WEBHOOK_TOKEN = os.environ.get("MAXWAY_IIKO_WEBHOOK_TOKEN", "").strip()
 IIKO_WEBHOOK_KEEP = 300          # nechta oxirgi hodisa bazada qoladi
 IIKO_WEBHOOK_BODY_MAX = 20000    # bitta yozuvda saqlanadigan JSON uzunligi
 
+# iikoWeb'da filtrni sozlash qo'lda va xato qilish oson, shuning uchun himoya
+# shu yerda ham turadi: 22 filialdan oqib keladigan zakaz hodisalari bazani
+# to'ldirib yubormasin. Bular jurnalga YOZILMAYDI, faqat sanaladi.
+# Ro'yxat "taqiq" tamoyilida: stop-list hodisasi aynan qanday nomlanishini hali
+# ko'rmadik, shuning uchun notanish tur baribir jurnalga tushadi.
+IIKO_WEBHOOK_SKIP_TYPES = {
+    "deliveryorderupdate", "deliveryordererror",
+    "tableorderupdate", "tableordererror",
+    "reserveupdate", "reserveerror",
+    "personalshiftupdate",
+}
+_iiko_webhook_skipped = {}       # {eventType: nechta marta o'tkazib yuborildi}
+
 
 def _iiko_webhook_authorized(request: Request) -> bool:
     """iikoWeb'dagi «Токен авторизации» bilan solishtiradi.
@@ -2784,8 +2797,17 @@ async def iiko_webhook(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         rows = [{"event_type": "", "org_id": "", "terminal_group_id": "",
                  "note": f"JSON emas: {e}"[:200], "raw": None}]
+    keep = []
+    for r in rows:
+        if r["event_type"].lower() in IIKO_WEBHOOK_SKIP_TYPES:
+            t = r["event_type"]
+            _iiko_webhook_skipped[t] = _iiko_webhook_skipped.get(t, 0) + 1
+            continue
+        keep.append(r)
+    if not keep:
+        return JSONResponse({"ok": True})
     try:
-        for r in rows:
+        for r in keep:
             body = (json.dumps(r["raw"], ensure_ascii=False)
                     if r["raw"] is not None else raw)
             db.add(models.IikoWebhookEvent(
@@ -3511,6 +3533,8 @@ def api_iiko_webhook_log(request: Request, limit: int = 20,
     return JSONResponse({
         "token_set": bool(IIKO_WEBHOOK_TOKEN),
         "total": db.query(func.count(models.IikoWebhookEvent.id)).scalar() or 0,
+        # jurnalga yozilmagan zakaz hodisalari — trafik bor-yo'qligini ko'rsatadi
+        "skipped": dict(_iiko_webhook_skipped),
         "events": [{
             "id": e.id,
             "at": e.received_at.strftime("%d.%m.%Y %H:%M:%S") if e.received_at else "",

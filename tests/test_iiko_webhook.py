@@ -101,6 +101,31 @@ def test_stop_listga_tegmaydi(client, db, seed, monkeypatch):
     assert db.query(models.StopEntry).count() == before
 
 
+def test_zakaz_hodisalari_jurnalga_yozilmaydi(client, db, monkeypatch):
+    """22 filialdan oqib keladigan zakazlar bazani to'ldirmasin — faqat sanaladi.
+    iikoWeb filtri noto'g'ri sozlansa ham himoya shu yerda ishlaydi."""
+    monkeypatch.setattr(main, "IIKO_WEBHOOK_TOKEN", "s3cret")
+    monkeypatch.setattr(main, "_iiko_webhook_skipped", {})
+    r = client.post("/iiko/webhook", json=[
+        {"eventType": "DeliveryOrderUpdate", "organizationId": "org-1"},
+        {"eventType": "TableOrderUpdate", "organizationId": "org-1"},
+        {"eventType": "StopListUpdate", "organizationId": "org-1"},
+    ], headers={"Authorization": "s3cret"})
+    assert r.status_code == 200
+    rows = _events(db)
+    assert [e.event_type for e in rows] == ["StopListUpdate"]
+    assert main._iiko_webhook_skipped == {"DeliveryOrderUpdate": 1, "TableOrderUpdate": 1}
+
+
+def test_notanish_tur_jurnalga_tushadi(client, db, monkeypatch):
+    """Stop-list hodisasi aynan qanday nomlanishini hali bilmaymiz — shuning
+    uchun taqiq ro'yxatida yo'q har qanday tur saqlanadi."""
+    monkeypatch.setattr(main, "IIKO_WEBHOOK_TOKEN", "s3cret")
+    client.post("/iiko/webhook", json=[{"eventType": "SomeNewIikoEvent"}],
+                headers={"Authorization": "s3cret"})
+    assert [e.event_type for e in _events(db)] == ["SomeNewIikoEvent"]
+
+
 def test_jurnal_faqat_adminga(client, db, seed, monkeypatch):
     monkeypatch.setattr(main, "IIKO_WEBHOOK_TOKEN", "s3cret")
     client.post("/iiko/webhook", json=[{"eventType": "StopListUpdate"}],
