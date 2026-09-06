@@ -48,6 +48,41 @@ def test_hodisa_jurnalga_tushadi(client, db, monkeypatch):
     assert json.loads(rows[0].body)["eventInfo"]["items"][0]["productId"] == "p-1"
 
 
+def test_haqiqiy_stoplist_payloadi(client, db, monkeypatch):
+    """iiko'dan kelgan haqiqiy hodisa (2026-09-06, «стакан» stopga qo'yilgani).
+
+    Diqqat: payloadda taomlar YO'Q — faqat qaysi terminal guruh o'zgargani."""
+    monkeypatch.setattr(main, "IIKO_WEBHOOK_TOKEN", "s3cret")
+    r = client.post("/iiko/webhook", json=[{
+        "eventType": "StopListUpdate",
+        "eventTime": "2026-09-06 12:44:22.100",
+        "organizationId": "4f8ded7d-a5ee-4e1e-ad21-0602e59fd3ed",
+        "correlationId": "32967555-47bd-4b8d-b96c-afe86ff27650",
+        "eventInfo": {"terminalGroupsStopListsUpdates": [
+            {"id": "00b1d474-869c-4d13-b015-47a43ae449c6", "isFull": False}]},
+    }], headers={"Authorization": "s3cret"})
+    assert r.status_code == 200
+    rows = _events(db)
+    assert len(rows) == 1
+    assert rows[0].org_id == "4f8ded7d-a5ee-4e1e-ad21-0602e59fd3ed"
+    assert rows[0].terminal_group_id == "00b1d474-869c-4d13-b015-47a43ae449c6"
+    assert rows[0].note == "isFull=false"
+
+
+def test_bir_nechta_terminal_guruh_alohida_qator(client, db, monkeypatch):
+    """Bitta hodisada bir nechta terminal guruh bo'lsa — har biriga alohida
+    qator: keyinchalik ular filiallarga alohida bog'lanadi."""
+    monkeypatch.setattr(main, "IIKO_WEBHOOK_TOKEN", "s3cret")
+    client.post("/iiko/webhook", json=[{
+        "eventType": "StopListUpdate", "organizationId": "org-1",
+        "eventInfo": {"terminalGroupsStopListsUpdates": [
+            {"id": "tg-a", "isFull": True}, {"id": "tg-b", "isFull": False}]},
+    }], headers={"Authorization": "s3cret"})
+    rows = _events(db)
+    assert [e.terminal_group_id for e in rows] == ["tg-a", "tg-b"]
+    assert [e.note for e in rows] == ["isFull=true", "isFull=false"]
+
+
 def test_bearer_prefiksi_ham_qabul_qilinadi(client, db, monkeypatch):
     monkeypatch.setattr(main, "IIKO_WEBHOOK_TOKEN", "s3cret")
     r = client.post("/iiko/webhook", json=[{"eventType": "X"}],

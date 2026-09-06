@@ -2751,12 +2751,31 @@ def _iiko_webhook_authorized(request: Request) -> bool:
     return bool(got) and hmac.compare_digest(got, IIKO_WEBHOOK_TOKEN)
 
 
+def _iiko_stoplist_updates(info: dict) -> list:
+    """StopListUpdate hodisasidan terminal guruhlar ro'yxati.
+
+    Haqiqiy payload (2026-09-06 da o'lchandi):
+        "eventInfo": {"terminalGroupsStopListsUpdates":
+                      [{"id": "<terminalGroupId>", "isFull": false}]}
+
+    Diqqat: ichida taomlar YO'Q — bu shunchaki «shu terminal guruhning
+    stop-listi o'zgardi» degan xabar. Nima o'zgarganini bilish uchun
+    /api/1/stop_lists ni so'rash kerak (u esa access_token talab qiladi)."""
+    ups = info.get("terminalGroupsStopListsUpdates")
+    out = []
+    if isinstance(ups, list):
+        for u in ups:
+            if isinstance(u, dict) and u.get("id"):
+                out.append((str(u["id"])[:64], bool(u.get("isFull"))))
+    return out
+
+
 def _iiko_webhook_rows(payload) -> list:
     """Xom payload'ni jurnal qatorlariga ajratadi.
 
     iiko odatda hodisalar RO'YXATINI yuboradi; ro'yxat bo'lmasa — bitta qator.
-    Maydon nomlari turlicha bo'lishi mumkin, shuning uchun bir nechta variant
-    qaraladi va topilmagani bo'sh qoladi (xom JSON baribir saqlanadi)."""
+    StopListUpdate ichida bir nechta terminal guruh bo'lishi mumkin — har biriga
+    alohida qator, chunki keyinchalik ular filialga alohida bog'lanadi."""
     events = payload if isinstance(payload, list) else [payload]
     rows = []
     for ev in events[:50]:          # bitta so'rovda juda ko'p bo'lsa — cheklaymiz
@@ -2766,15 +2785,21 @@ def _iiko_webhook_rows(payload) -> list:
             continue
         info = ev.get("eventInfo")
         info = info if isinstance(info, dict) else {}
-        rows.append({
+        base = {
             "event_type": str(ev.get("eventType") or "")[:64],
             "org_id": str(ev.get("organizationId")
                           or info.get("organizationId") or "")[:64],
-            "terminal_group_id": str(info.get("terminalGroupId")
-                                     or ev.get("terminalGroupId") or "")[:64],
-            "note": "",
             "raw": ev,
-        })
+        }
+        updates = _iiko_stoplist_updates(info)
+        if updates:
+            for tg, is_full in updates:
+                rows.append(dict(base, terminal_group_id=tg,
+                                 note="isFull=true" if is_full else "isFull=false"))
+            continue
+        rows.append(dict(base, note="",
+                         terminal_group_id=str(info.get("terminalGroupId")
+                                               or ev.get("terminalGroupId") or "")[:64]))
     return rows
 
 
