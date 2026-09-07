@@ -1585,6 +1585,9 @@ def admin_clear_requests(request: Request, db: Session = Depends(get_db)):
     db.commit()
     print(">>> [MAXWAY] Barcha zayavkalar tozalandi", flush=True)
     return RedirectResponse("/admin?cleared=1", 302)
+
+
+@app.post("/admin/categories/create")
 def admin_cat_create(request: Request, name: str = Form(...), icon: str = Form("🗂️"),
                      color: str = Form("#2563eb"), subcategories: str = Form(""),
                      db: Session = Depends(get_db)):
