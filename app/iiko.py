@@ -204,9 +204,16 @@ class IikoClient:
         return out
 
     def stop_lists(self, org_ids: list) -> dict:
-        """{terminalGroupId: {productId: balance}} — hozir stopda turgan pozitsiyalar.
+        """{terminalGroupId: {productId: {balance, sku, date_add}}} — hozir stopda
+        turgan pozitsiyalar.
 
-        iiko sabab (причина) bermaydi, faqat productId va qoldiq (balance)."""
+        iiko sabab (причина) bermaydi, lekin `dateAdd` beradi — stop kassada
+        qachon qo'yilgani. U **UTC** da keladi (08.09.2026 da o'lchandi: eng yangi
+        yozuv o'sha paytdagi UTC dan 15 daqiqa orqada, Toshkent vaqtidan 5 soat),
+        shuning uchun ko'rsatishdan oldin +5 soat qo'shiladi.
+
+        Kalitlar productId bo'lib qoladi, shuning uchun `set(stops[tg])` avvalgidek
+        ishlaydi."""
         if not org_ids:
             return {}
         res = self.post("/api/1/stop_lists", {"organizationIds": list(org_ids)})
@@ -220,7 +227,9 @@ class IikoClient:
                 for it in tg.get("items", []) or []:
                     pid = it.get("productId")
                     if pid:
-                        items[pid] = it.get("balance")
+                        items[pid] = {"balance": it.get("balance"),
+                                      "sku": it.get("sku") or "",
+                                      "date_add": it.get("dateAdd") or ""}
                 out[tg_id] = items
         return out
 

@@ -2549,12 +2549,34 @@ def iiko_linked_branches(db: Session):
         models.Branch.iiko_terminal_id != "").all()
 
 
-def _iiko_sync_branch(db: Session, branch, current_pids: set, items: dict):
+IIKO_UTC_OFFSET = timedelta(hours=5)    # iiko UTC beradi, biz Toshkent vaqtida yashaymiz
+
+
+def _iiko_stop_time(info, fallback):
+    """iiko'dagi `dateAdd` ni Toshkent vaqtiga o'giradi.
+
+    Bu — stop KASSADA qachon qo'yilgani, bizning sinxron uni qachon ko'rgani emas.
+    Farqi katta: birinchi sinxronda stopda bir yildan beri turgan pozitsiyalar ham
+    bor edi (eng eskisi 13.11.2025), ular «bugun qo'yilgan» bo'lib chiqmasligi kerak.
+
+    dateAdd bo'lmasa yoki o'qib bo'lmasa — fallback (odatda hozirgi vaqt)."""
+    raw = (info or {}).get("date_add") if isinstance(info, dict) else None
+    if not raw:
+        return fallback
+    try:
+        t = datetime.strptime(str(raw)[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return fallback
+    return t + IIKO_UTC_OFFSET
+
+
+def _iiko_sync_branch(db: Session, branch, current: dict, items: dict):
     """Bitta filialning stop-listini iiko holatiga keltiradi.
 
     Birinchi sinxronizatsiyada (branch.iiko_synced_at bo'sh) telegram JIM turadi —
     aks holda iiko'da turgan hamma stop bir vaqtda kanalga to'kilib ketardi."""
     silent = branch.iiko_synced_at is None
+    current_pids = set(current)
     active = db.query(models.StopEntry).filter(
         models.StopEntry.branch_id == branch.id,
         models.StopEntry.resolved == False).all()
@@ -2575,7 +2597,8 @@ def _iiko_sync_branch(db: Session, branch, current_pids: set, items: dict):
         e = models.StopEntry(
             branch_id=branch.id, menu_item_id=mi.id, reason=REASON_NOT_SET,
             comment="", supply_comment="", supply_confirmed=False,
-            source=SOURCE_IIKO, created_by=None, created_at=now)
+            source=SOURCE_IIKO, created_by=None,
+            created_at=_iiko_stop_time(current.get(pid), now))
         db.add(e)
         created.append(e)
 
@@ -2622,7 +2645,8 @@ def iiko_sync_once(db: Session) -> dict:
                       for b in branches if (b.iiko_org_id or "").strip()})
     if not org_ids:
         org_ids = [o["id"] for o in client.organizations() if o.get("id")]
-    stops = client.stop_lists(org_ids)          # {terminalGroupId: {productId: balance}}
+    # {terminalGroupId: {productId: {balance, sku, date_add}}}
+    stops = client.stop_lists(org_ids)
 
     wanted = set()
     for b in branches:
@@ -2636,7 +2660,7 @@ def iiko_sync_once(db: Session) -> dict:
         if tg not in stops:
             offline.append(b.name)
             continue
-        a, r = _iiko_sync_branch(db, b, set(stops[tg]), items)
+        a, r = _iiko_sync_branch(db, b, stops[tg], items)
         added_n += a
         resolved_n += r
     db.commit()
