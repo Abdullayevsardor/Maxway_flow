@@ -1587,6 +1587,33 @@ def admin_clear_requests(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse("/admin?cleared=1", 302)
 
 
+@app.post("/admin/branches/iiko/autobind")
+def admin_branches_iiko_autobind(request: Request, force: str = Form(""),
+                                 db: Session = Depends(get_db)):
+    """Filiallarni iiko'ga bir tugma bilan bog'laydi (nomi bo'yicha).
+
+    Qo'lda 20 ta filialga GUID kiritish uzoq va xato qilish oson."""
+    user = current_user(request, db)
+    if not user or user.role != Role.admin:
+        return RedirectResponse("/login", 302)
+    if not iiko.iiko_enabled():
+        return RedirectResponse("/admin?err=" + urllib.parse.quote(
+            "iiko недоступен: apiKey не задан"), 302)
+    try:
+        res = iiko_autobind(db, force=bool(force))
+    except iiko.IikoError as e:
+        return RedirectResponse("/admin?err=" + urllib.parse.quote(
+            "Ошибка iiko: " + str(e)[:200]), 302)
+    parts = [f"Привязано: {len(res['bound'])}"]
+    if res["skipped"]:
+        parts.append(f"уже было: {len(res['skipped'])}")
+    if res["not_found"]:
+        parts.append("не найдено в iiko: " + ", ".join(res["not_found"][:5]))
+    if res["ambiguous"]:
+        parts.append("проверьте вручную: " + ", ".join(res["ambiguous"][:5]))
+    return RedirectResponse("/admin?ok=" + urllib.parse.quote(" · ".join(parts)), 302)
+
+
 @app.post("/admin/categories/create")
 def admin_cat_create(request: Request, name: str = Form(...), icon: str = Form("🗂️"),
                      color: str = Form("#2563eb"), subcategories: str = Form(""),
@@ -2688,6 +2715,104 @@ def iiko_sync_once(db: Session) -> dict:
         print(f">>> [MAXWAY] iiko: javob bermagan filiallar — {', '.join(offline)}", flush=True)
     return {"ok": True, "added": added_n, "resolved": resolved_n,
             "branches": len(branches), "offline": offline}
+
+
+# ---------- filiallarni iiko'ga avtomatik bog'lash ----------
+# 20 ta filialni qo'lda bog'lash uzoq va xato qilish oson (GUID o'rniga nom
+# yozilib qolishi mumkin), shuning uchun admin panelidan bir tugma bilan
+# bog'lanadi: filial nomi iiko tashkiloti nomiga to'g'ri kelsa, o'sha
+# tashkilotning eng mos terminal guruhi tanlanadi.
+
+# iiko'da nomlar kirillcha («Универсам»), bizda lotincha («UNIVERSAM») —
+# solishtirish uchun harfma-harf o'giramiz.
+_KIRIL = {
+    "А": "A", "Б": "B", "В": "V", "Г": "G", "Д": "D", "Е": "E", "Ё": "E",
+    "Ж": "ZH", "З": "Z", "И": "I", "Й": "Y", "К": "K", "Л": "L", "М": "M",
+    "Н": "N", "О": "O", "П": "P", "Р": "R", "С": "S", "Т": "T", "У": "U",
+    "Ф": "F", "Х": "X", "Ц": "TS", "Ч": "CH", "Ш": "SH", "Щ": "SCH",
+    "Ъ": "", "Ы": "Y", "Ь": "", "Э": "E", "Ю": "YU", "Я": "YA",
+}
+
+
+def _iiko_key(text: str) -> str:
+    """Solishtirish uchun nom: kirill -> lotin, faqat harf va raqamlar."""
+    out = []
+    for ch in (text or "").upper():
+        out.append(_KIRIL.get(ch, ch))
+    return "".join(c for c in "".join(out) if c.isalnum())
+
+
+def _iiko_branch_tail(name: str) -> str:
+    """«MW01-UNIVERSAM» -> «UNIVERSAM». Bitta tashkilotda bir nechta NUQTA
+    bo'lganda (MW01 ichida Универсам va Фонтан) kerakli guruhni shu bo'lak
+    ajratadi."""
+    tail = (name or "").split("-", 1)[1] if "-" in (name or "") else (name or "")
+    return _iiko_key(tail)
+
+
+def _iiko_pick_group(branch_name: str, groups: list, alive: set):
+    """Filialga eng mos terminal guruh. Qaytadi: (guruh, shubhalimi).
+
+    Ballar: nomi filialga mos kelsa +100 (eng kuchli belgi), kassasi tirik
+    bo'lsa +10, «Зал» bo'lsa +5 (asosiy zal odatda doim ishlaydi)."""
+    tail = _iiko_branch_tail(branch_name)
+    best, scored = None, []
+    for g in groups:
+        key = _iiko_key(g.get("name"))
+        score = 1
+        if len(tail) >= 4 and tail in key:
+            score += 100
+        if g.get("id") in alive:
+            score += 10
+        if "ZAL" in key:
+            score += 5
+        scored.append((score, g))
+    if not scored:
+        return None, False
+    scored.sort(key=lambda x: -x[0])
+    best_score = scored[0][0]
+    # bir xil ballik bir nechta nomzod bo'lsa — odam ko'rib chiqsin
+    shubhali = sum(1 for sc, _ in scored if sc == best_score) > 1
+    return scored[0][1], shubhali
+
+
+def iiko_autobind(db: Session, force: bool = False) -> dict:
+    """Filiallarni nomi bo'yicha iiko tashkilotlariga bog'laydi.
+
+    force=False — allaqachon TO'G'RI bog'langanlarga tegilmaydi (terminal_id
+    haqiqiy GUID bo'lsa). Noto'g'ri qiymat (masalan GUID o'rniga nom) yozilgan
+    bo'lsa — ustidan yoziladi."""
+    client = iiko.get_client()
+    orgs = client.organizations()
+    org_by_key = {_iiko_key(o.get("name")): o for o in orgs}
+    tg = client.terminal_groups([o["id"] for o in orgs if o.get("id")])
+    all_ids = {t["id"] for items in tg.values() for t in items if t.get("id")}
+    try:
+        alive = client.alive_terminal_groups([o["id"] for o in orgs], sorted(all_ids))
+    except iiko.IikoError:
+        alive = set()
+
+    bogilandi, otkazildi, topilmadi, shubhali = [], [], [], []
+    for b in db.query(models.Branch).order_by(models.Branch.name).all():
+        cur = (b.iiko_terminal_id or "").strip()
+        if cur in all_ids and not force:
+            otkazildi.append(b.name)          # allaqachon to'g'ri bog'langan
+            continue
+        o = org_by_key.get(_iiko_key(b.name))
+        if not o:
+            topilmadi.append(b.name)
+            continue
+        g, ikkilanish = _iiko_pick_group(b.name, tg.get(o["id"]) or [], alive)
+        if not g:
+            topilmadi.append(b.name)
+            continue
+        _apply_iiko_bind(b, f"{g['id']}|{o['id']}|{g.get('name') or ''}")
+        bogilandi.append(f"{b.name} -> {g.get('name')}")
+        if ikkilanish:
+            shubhali.append(b.name)
+    db.commit()
+    return {"ok": True, "bound": bogilandi, "skipped": otkazildi,
+            "not_found": topilmadi, "ambiguous": shubhali}
 
 
 def iiko_sync_locked(db: Session) -> dict:

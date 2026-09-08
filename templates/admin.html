@@ -91,7 +91,15 @@
 <div class="panel">
   <div class="panel-head">
     <div class="title">📍 Филиалы <span class="badge">{{ branches|length }}</span></div>
-    <button class="btn btn-blue" onclick="openBranchCreate()">＋ Добавить филиал</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      {% if iiko_on %}
+      <form method="post" action="/admin/branches/iiko/autobind" style="display:inline"
+            onsubmit="return confirm('Привязать филиалы к iiko автоматически по названию? Уже привязанные не изменятся.')">
+        <button class="btn" type="submit">🔗 Привязать к iiko</button>
+      </form>
+      {% endif %}
+      <button class="btn btn-blue" onclick="openBranchCreate()">＋ Добавить филиал</button>
+    </div>
   </div>
   <table>
     <thead><tr><th colspan="3" style="padding:10px 12px">
