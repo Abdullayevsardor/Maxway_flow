@@ -29,10 +29,17 @@ NAMES = {P_BURGER: "Бургер из iiko", P_FRIES: "Картофель из i
 
 
 class FakeClient:
-    """iiko klientining o'rnini bosadi. `stops` — {terminalGroupId: {productId: balance}}."""
+    """iiko klientining o'rnini bosadi.
 
-    def __init__(self, stops):
+    `stops` — {terminalGroupId: {productId: ma'lumot}}.
+    `alive` — kassasi yoqilgan terminal guruhlar; ko'rsatilmasa, javobdagilar
+    tirik deb hisoblanadi (haqiqiy iiko'da stopi bor guruh doim javobda bo'ladi).
+    `alive_error=True` — is_alive metodi xato beradi (aloqa yo'q holati)."""
+
+    def __init__(self, stops, alive=None, alive_error=False):
         self.stops = stops
+        self.alive = set(stops) if alive is None else set(alive)
+        self.alive_error = alive_error
         self.calls = 0
 
     def organizations(self):
@@ -44,6 +51,11 @@ class FakeClient:
     def stop_lists(self, org_ids):
         self.calls += 1
         return self.stops
+
+    def alive_terminal_groups(self, org_ids, tg_ids):
+        if self.alive_error:
+            raise main.iiko.IikoError("is_alive: aloqa yo'q")
+        return {t for t in tg_ids if t in self.alive}
 
     def resolve_names(self, org_ids, product_ids):
         return {p: NAMES[p] for p in product_ids if p in NAMES}
@@ -72,8 +84,8 @@ def iiko_env(db, seed, monkeypatch):
     db.commit()
 
 
-def run_sync(db, monkeypatch, stops):
-    fake = FakeClient(stops)
+def run_sync(db, monkeypatch, stops, alive=None, alive_error=False):
+    fake = FakeClient(stops, alive=alive, alive_error=alive_error)
     monkeypatch.setattr(main.iiko, "get_client", lambda: fake)
     return main.iiko_sync_once(db)
 
@@ -281,3 +293,70 @@ def test_boglanmagan_filial_qolda_qoshishda_davom_etadi(db, iiko_env, seed, clie
         models.StopEntry.branch_id == seed["b2"].id,
         models.StopEntry.menu_item_id == dish.id).one()
     assert e.source == main.SOURCE_MANUAL
+
+
+# ---------- bo'sh stop-list: iiko uni javobda umuman ko'rsatmaydi ----------
+# 08.09.2026 da o'lchandi: /api/1/stop_lists javobida FAQAT stopi bor guruhlar
+# keladi (45 guruhdan 13 tasi, hammasida stop bor). Shuning uchun «javobda yo'q»
+# ni «kassa o'chiq» dan is_alive orqali ajratamiz.
+
+def test_bosh_stoplist_tirik_kassada_tozalanadi(db, iiko_env, monkeypatch):
+    """Filialdagi OXIRGI taom stopdan olinsa, guruh javobdan butunlay yo'qoladi.
+    Kassa tirik bo'lsa — bu «stop yo'q» degani, yozuv yopilishi kerak."""
+    b1 = iiko_env["b1"]
+    run_sync(db, monkeypatch, {TG1: {P_BURGER: 0.0}, TG2: {}})
+    assert active_names(db, b1) == ["Бургер из iiko"]
+
+    # TG1 endi javobda yo'q, lekin kassasi ishlayapti
+    res = run_sync(db, monkeypatch, {TG2: {}}, alive={TG1, TG2})
+    assert res["resolved"] == 1
+    assert active_names(db, b1) == []
+    assert b1.name not in res["offline"]
+
+
+def test_bosh_stoplist_olik_kassada_tegilmaydi(db, iiko_env, monkeypatch):
+    """Xuddi shu holat, lekin kassa o'chiq — holat noma'lum, yozuvga TEGILMAYDI."""
+    b1 = iiko_env["b1"]
+    run_sync(db, monkeypatch, {TG1: {P_BURGER: 0.0}, TG2: {}})
+
+    res = run_sync(db, monkeypatch, {TG2: {}}, alive={TG2})
+    assert res["resolved"] == 0
+    assert active_names(db, b1) == ["Бургер из iiko"]
+    assert b1.name in res["offline"]
+
+
+def test_is_alive_xato_bersa_ehtiyotkor_ishlaydi(db, iiko_env, monkeypatch):
+    """is_alive javob bermasa — bo'sh ro'yxatlarni tozalamaymiz. Aloqa uzilganda
+    butun stop-listni yechib yuborishdan ko'ra, eski holatni saqlagan yaxshi."""
+    b1 = iiko_env["b1"]
+    run_sync(db, monkeypatch, {TG1: {P_BURGER: 0.0}, TG2: {}})
+
+    res = run_sync(db, monkeypatch, {TG2: {}}, alive_error=True)
+    assert res["resolved"] == 0
+    assert active_names(db, b1) == ["Бургер из iiko"]
+
+
+def test_stop_vaqti_iikodan_olinadi(db, iiko_env, monkeypatch):
+    """dateAdd — stop kassada qachon qo'yilgani (iiko UTC beradi, +5 Toshkent).
+    Sinxron ko'rgan vaqt emas: stopda oylab turgan pozitsiyalar ham bor."""
+    from datetime import datetime
+    b1 = iiko_env["b1"]
+    run_sync(db, monkeypatch, {
+        TG1: {P_BURGER: {"balance": 0.0, "sku": "123",
+                         "date_add": "2025-11-13 08:44:33.803"}},
+        TG2: {}})
+    e = db.query(models.StopEntry).filter(
+        models.StopEntry.branch_id == b1.id,
+        models.StopEntry.resolved == False).one()
+    assert e.created_at == datetime(2025, 11, 13, 13, 44, 33)      # UTC + 5 soat
+
+
+def test_dateadd_yoq_bolsa_hozirgi_vaqt(db, iiko_env, monkeypatch):
+    """Eski format (faqat balance) yoki buzuq sana — yozuv baribir yaratiladi."""
+    b1 = iiko_env["b1"]
+    run_sync(db, monkeypatch, {
+        TG1: {P_BURGER: {"balance": 0.0, "date_add": "buzuq-sana"}}, TG2: {}})
+    e = db.query(models.StopEntry).filter(
+        models.StopEntry.branch_id == b1.id,
+        models.StopEntry.resolved == False).one()
+    assert e.created_at is not None

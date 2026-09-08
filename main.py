@@ -2632,9 +2632,15 @@ def _iiko_sync_branch(db: Session, branch, current: dict, items: dict):
 def iiko_sync_once(db: Session) -> dict:
     """Bitta sinxronizatsiya sikli. Qaytadi: natija lug'ati (diagnostika uchun).
 
-    Xavfsizlik qoidasi: terminal guruh javobda umuman bo'lmasa (kassa o'chiq,
-    aloqa yo'q) — o'sha filialga TEGILMAYDI. Aks holda hamma taom noto'g'ri
-    stopdan olinib ketardi."""
+    Xavfsizlik qoidasi uch holatga bo'linadi, chunki /api/1/stop_lists javobida
+    faqat STOPI BOR guruhlar keladi (bo'sh ro'yxatli guruh umuman ko'rinmaydi):
+
+      * guruh javobda bor          -> ro'yxat bo'yicha to'liq solishtirish;
+      * javobda yo'q, lekin TIRIK  -> stop-listi bo'sh -> hammasi stopdan olinadi;
+      * javobda yo'q va O'LIK      -> kassa o'chiq, holat noma'lum -> TEGILMAYDI.
+
+    Ikkinchi holat bo'lmasa, filialdagi oxirgi taom stopdan olinganda guruh
+    javobdan yo'qolardi va yozuvlar stop-listda abadiy osilib qolardi."""
     branches = iiko_linked_branches(db)
     if not branches:
         return {"ok": True, "added": 0, "resolved": 0, "branches": 0, "offline": [],
@@ -2654,13 +2660,27 @@ def iiko_sync_once(db: Session) -> dict:
     names = client.resolve_names(org_ids, wanted) if wanted else {}
     items = _iiko_menu_items(db, wanted, names)
 
+    # Tirik guruhlar: «bo'sh stop-list» ni «kassa o'chiq» dan ajratish uchun.
+    # is_alive ishlamasa — eski, ehtiyotkor xatti-harakat (javobda yo'q = tegilmaydi).
+    tg_ids = [b.iiko_terminal_id for b in branches if b.iiko_terminal_id]
+    try:
+        alive = client.alive_terminal_groups(org_ids, tg_ids)
+    except iiko.IikoError as e:
+        alive = set()
+        print(">>> [MAXWAY] iiko: is_alive olinmadi, bo'sh ro'yxatlar tozalanmaydi:",
+              str(e)[:200], flush=True)
+
     added_n, resolved_n, offline = 0, 0, []
     for b in branches:
         tg = b.iiko_terminal_id
-        if tg not in stops:
+        if tg in stops:
+            current = stops[tg]
+        elif tg in alive:
+            current = {}            # kassa ishlayapti, stop-listi bo'sh
+        else:
             offline.append(b.name)
             continue
-        a, r = _iiko_sync_branch(db, b, stops[tg], items)
+        a, r = _iiko_sync_branch(db, b, current, items)
         added_n += a
         resolved_n += r
     db.commit()

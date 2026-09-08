@@ -233,6 +233,22 @@ class IikoClient:
                 out[tg_id] = items
         return out
 
+    def alive_terminal_groups(self, org_ids: list, tg_ids: list) -> set:
+        """Tirik (kassasi yoqilgan) terminal guruhlar to'plami.
+
+        Nima uchun kerak: /api/1/stop_lists javobida FAQAT stopi bor guruhlar
+        keladi — stop-listi bo'sh guruh umuman ko'rinmaydi (08.09.2026 da
+        o'lchandi: 45 guruhdan javobda 13 tasi, hammasida stop bor edi).
+        Shu sababli «javobda yo'q» degani ikki xil bo'lishi mumkin:
+        stop yo'q YOKI kassa o'chiq. Bu metod ikkisini ajratadi."""
+        if not org_ids or not tg_ids:
+            return set()
+        res = self.post("/api/1/terminal_groups/is_alive",
+                        {"organizationIds": list(org_ids),
+                         "terminalGroupIds": list(tg_ids)})
+        return {i.get("terminalGroupId") for i in (res.get("isAliveStatus") or [])
+                if i.get("isAlive") and i.get("terminalGroupId")}
+
     def product_names(self, org_id: str, force: bool = False) -> dict:
         """{productId: nomi} — keshlangan nomenklatura.
 
