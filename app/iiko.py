@@ -29,6 +29,7 @@ yangilanadi. Nomenklatura ham keshlanadi (har 2 daqiqada qayta yuklamaslik uchun
 """
 import json
 import os
+import re
 import threading
 import urllib.error
 import urllib.request
@@ -73,13 +74,31 @@ def _read_credentials_file() -> dict:
     return out
 
 
+def _clean_value(raw: str) -> str:
+    """Env qiymatidan tasodifan tushib qolgan «KALIT = » qismini olib tashlaydi.
+
+    Railway'ga o'zgaruvchi qo'shayotganda butun qator qiymat sifatida
+    nusxalanishi oson bo'ladi — o'shanda iiko «Login MAXWAY_IIKO_LOGIN =
+    68a4... is not authorized» deb javob beradi va sababini topish qiyin.
+    Telegram tokeni uchun shunday himoya allaqachon bor, iiko uchun ham qo'shildi.
+    Qo'shtirnoq va bo'shliqlar ham tozalanadi."""
+    v = (raw or "").strip().strip('"').strip("'").strip()
+    if "=" in v:
+        left, right = v.split("=", 1)
+        # faqat chapda kalit nomiga o'xshash narsa bo'lsa kesamiz (clientSecret
+        # ichida «=» bo'lishi mumkin — u base64 to'ldiruvchisi, oxirida turadi)
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", left.strip()):
+            v = right.strip().strip('"').strip("'").strip()
+    return v
+
+
 def get_credentials() -> dict:
     """{"api_key", "app_id", "client_secret"} — env fayldan ustun turadi."""
     f = _read_credentials_file()
     return {
-        "api_key": os.environ.get("MAXWAY_IIKO_LOGIN", "").strip() or f.get("apikey", ""),
-        "app_id": os.environ.get("MAXWAY_IIKO_APP_ID", "").strip() or f.get("appid", ""),
-        "client_secret": (os.environ.get("MAXWAY_IIKO_CLIENT_SECRET", "").strip()
+        "api_key": _clean_value(os.environ.get("MAXWAY_IIKO_LOGIN", "")) or f.get("apikey", ""),
+        "app_id": _clean_value(os.environ.get("MAXWAY_IIKO_APP_ID", "")) or f.get("appid", ""),
+        "client_secret": (_clean_value(os.environ.get("MAXWAY_IIKO_CLIENT_SECRET", ""))
                           or f.get("clientsecret", "")),
     }
 
