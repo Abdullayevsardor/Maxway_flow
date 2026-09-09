@@ -1,12 +1,13 @@
 """MAXWAY — ishlarni saqlash va ijrochilarga yo'naltirish tizimi (FastAPI)."""
 import os
 import json
+import re
 import hashlib
 import hmac
 import urllib.request
 import urllib.parse
 import urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime
 from typing import Optional, List
 
 from fastapi import FastAPI, Depends, Request, Form, HTTPException, File, UploadFile
@@ -46,6 +47,8 @@ def _ensure_columns():
               ("branches", "iiko_org_id", "VARCHAR(64) DEFAULT ''"),
               ("branches", "iiko_terminal_name", "VARCHAR(160) DEFAULT ''"),
               ("branches", "iiko_synced_at", "TIMESTAMP"),
+              ("branches", "work_from", "VARCHAR(5) DEFAULT ''"),
+              ("branches", "work_to", "VARCHAR(5) DEFAULT ''"),
               ("users", "perms", "TEXT"),
               ("requests", "dep_number", "INTEGER")]
     try:
@@ -2492,6 +2495,60 @@ def notify_stop_added(db: Session, created, actor):
                 token=get_stop_bot_token())
 
 
+# Filialning ish grafigi. iiko API uni bermaydi (tekshirildi: organizations va
+# delivery_restrictions da yo'q), shuning uchun sozlama sifatida saqlanadi.
+# Loyiha oynalarida ko'rinmaydi — faqat «stopda qancha turdi» hisobiga ta'sir
+# qiladi. Filialda alohida grafik bo'lsa, branches.work_from/work_to to'ldiriladi.
+WORK_HOURS = os.environ.get("MAXWAY_WORK_HOURS", "09:00-03:00").strip()
+
+
+def _parse_hhmm(value: str):
+    """«09:00» -> (9, 0). Noto'g'ri qiymat -> None."""
+    m = re.fullmatch(r"\s*(\d{1,2})[:.](\d{2})\s*", value or "")
+    if not m:
+        return None
+    h, mi = int(m.group(1)), int(m.group(2))
+    return (h, mi) if h <= 23 and mi <= 59 else None
+
+
+def branch_work_hours(branch):
+    """Filial grafigi: o'zinikisi bo'lsa o'shani, aks holda umumiy sozlamani."""
+    f = _parse_hhmm(getattr(branch, "work_from", "") or "")
+    t = _parse_hhmm(getattr(branch, "work_to", "") or "")
+    if f and t:
+        return f, t
+    parts = WORK_HOURS.split("-")
+    if len(parts) == 2:
+        f, t = _parse_hhmm(parts[0]), _parse_hhmm(parts[1])
+        if f and t:
+            return f, t
+    return None, None
+
+
+def working_delta(start, end, work_from, work_to):
+    """[start, end] oralig'idagi FAQAT ish vaqti.
+
+    Filial 09:00–03:00 ishlasa, yopiq turgan soatlar (03:00–09:00) hisobga
+    olinmaydi. Grafik berilmagan yoki noto'g'ri bo'lsa — oddiy ayirma (24/7)."""
+    if not work_from or not work_to or work_from == work_to:
+        return end - start
+    if end <= start:
+        return timedelta(0)
+    total = timedelta(0)
+    # oldingi kunning oynasi yarim tundan o'tib bugungi kunga cho'zilishi mumkin
+    day = (start - timedelta(days=1)).date()
+    while day <= end.date():
+        w1 = datetime.combine(day, dtime(*work_from))
+        w2 = datetime.combine(day, dtime(*work_to))
+        if w2 <= w1:                       # yarim tundan o'tadi: 09:00 -> 03:00
+            w2 += timedelta(days=1)
+        lo, hi = max(w1, start), min(w2, end)
+        if hi > lo:
+            total += hi - lo
+        day += timedelta(days=1)
+    return total
+
+
 def _human_duration(delta) -> str:
     """Muddatni ruscha qisqa yozadi: «2 д 5 ч», «3 ч 40 мин», «12 мин»."""
     mins = int(delta.total_seconds() // 60)
@@ -2530,7 +2587,9 @@ def notify_stop_resolved(db: Session, entries, actor):
             lines.append(f"🍽 Блюдо: <b>{e.menu_item.name if e.menu_item else '—'}</b>")
             lines.append(f"🏷 Причина была: {REASON_LABELS.get(e.reason, e.reason)}")
             if e.created_at and e.resolved_at:
-                lines.append(f"⏱ На стопе был: {_human_duration(e.resolved_at - e.created_at)}")
+                wf, wt = branch_work_hours(branch)
+                lines.append("⏱ На стопе был: " + _human_duration(
+                    working_delta(e.created_at, e.resolved_at, wf, wt)))
             if e.supply_comment:
                 lines.append(f"💬 Комментарий снабжения: {e.supply_comment}")
             link = f"/stoplist/{e.id}"

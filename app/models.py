@@ -199,6 +199,11 @@ class Branch(Base):
     director_name = Column(String(120), default="")  # filial direktori (buyurtmachi)
     # filial xodimlarining telegram chat_id lari (vergul bilan) — izoh/yechim xabari uchun
     tg_chat_ids = Column(Text, default="")
+    # ish grafigi «HH:MM» ko'rinishida (masalan 09:00 — 03:00). Stopda turgan
+    # muddat shu oraliq bo'yicha hisoblanadi: filial yopiq soatlar qo'shilmaydi.
+    # Bo'sh qoldirilsa — 24/7 deb qaraladi. iiko API bu grafikni bermaydi.
+    work_from = Column(String(5), default="")
+    work_to = Column(String(5), default="")
     # iikoCloud bog'lanishi: filial = bitta terminal guruh
     iiko_terminal_id = Column(String(64), default="", index=True)
     iiko_org_id = Column(String(64), default="")
