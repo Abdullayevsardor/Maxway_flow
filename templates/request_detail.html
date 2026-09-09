@@ -10,13 +10,6 @@
 <div class="page-head">
   <a href="/requests" class="btn btn-light">← Назад к заявкам</a>
   <div class="head-actions">
-    {% if user.role.value == 'admin' %}
-      {# Telegram xabari kelmagan bo'lsa qayta yuborish — kimga yetmagani ham ko'rinadi #}
-      <form method="post" action="/requests/{{ r.id }}/notify-again" style="display:inline;margin:0"
-            onsubmit="return confirm('Отправить уведомление в Telegram повторно?')">
-        <button class="btn btn-light" type="submit" title="Повторно отправить уведомление в Telegram">📨 Отправить уведомление</button>
-      </form>
-    {% endif %}
     {% if user.role.value in ['admin','manager'] %}
       <form method="post" action="/requests/{{ r.id }}/status" style="display:flex;gap:8px;align-items:center;margin:0">
         <span style="font-size:13px;color:var(--muted)">Статус:</span>
