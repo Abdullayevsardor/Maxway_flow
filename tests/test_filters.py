@@ -123,9 +123,9 @@ def test_dashboard_still_ok_for_other_roles(client, seed, kpp_setup, who):
     assert "Результаты фильтра" in r2.text            # filtr bilan — natijalar
 
 
-def test_ispolniteli_sahifasida_faqat_ijrochilar(client, db, seed):
-    """«Исполнители» sahifasida faqat executor rolidagilar chiqishi kerak —
-    ilgari filial loginlari (Заказчик), КПП va kuzatuvchilar ham ko'rinardi."""
+def test_ispolniteli_sahifasida_faqat_xodimlar(client, db, seed):
+    """«Исполнители» sahifasida admin, menejer va ijrochi ko'rinadi.
+    Filial loginlari (Заказчик), КПП va kuzatuvchilar — yo'q, ular xodim emas."""
     from app import models
     ijrochi = models.User(full_name="Тестовый Исполнитель", email="ijrochi@t.uz",
                           hashed_password="x", role=models.Role.executor, is_active=True)
@@ -134,10 +134,11 @@ def test_ispolniteli_sahifasida_faqat_ijrochilar(client, db, seed):
     try:
         c = login(client, seed["admin"])
         html = c.get("/executors").text
-        assert "Тестовый Исполнитель" in html
-        # filial logini va kuzatuvchi bu yerda bo'lmasligi kerak
-        assert seed["branch"].full_name not in html
-        assert seed["viewer"].full_name not in html
+        assert "Тестовый Исполнитель" in html          # ijrochi
+        assert seed["admin"].full_name in html          # admin
+        assert seed["supply"].full_name in html         # menejer
+        assert seed["branch"].full_name not in html     # filial logini
+        assert seed["viewer"].full_name not in html     # kuzatuvchi
     finally:
         db.delete(ijrochi)
         db.commit()

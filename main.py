@@ -1249,9 +1249,10 @@ def executors_page(request: Request, db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
-    # faqat ijrochilar: sahifadagi «Добавить» ham aynan shu rolni yaratadi,
-    # ilgari esa filial loginlari (Заказчик), КПП va kuzatuvchilar ham chiqardi
-    people_q = db.query(models.User).filter(models.User.role == Role.executor)
+    # xodimlar: admin, menejer va ijrochi. Filial loginlari (Заказчик),
+    # КПП va kuzatuvchilar bu sahifada ko'rinmaydi — ular xodim emas.
+    people_q = db.query(models.User).filter(
+        models.User.role.in_([Role.admin, Role.manager, Role.executor]))
     # bo'limga biriktirilgan admin/ijrochi faqat o'z bo'limidagilarni ko'radi
     if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id:
         people_q = people_q.filter(models.User.department_id == user.department_id)
