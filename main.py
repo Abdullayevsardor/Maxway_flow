@@ -4,6 +4,7 @@ import json
 import re
 import hashlib
 import hmac
+import threading
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -2981,6 +2982,9 @@ def iiko_sync_locked(db: Session) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+_IIKO_THREAD = None          # fon oqimi — /api/iiko/status da tirikligi ko'rinadi
+
+
 def _iiko_loop():
     """Fon oqimi: har IIKO_INTERVAL soniyada sinxronizatsiya."""
     import time
@@ -3006,8 +3010,11 @@ def start_iiko_worker():
         print(">>> [MAXWAY] iiko: apiKey yo'q — avtomatik sync o'chirilgan", flush=True)
         return
     import threading
-    threading.Thread(target=_iiko_loop, daemon=True, name="iiko-sync").start()
-    print(f">>> [MAXWAY] iiko sync ishga tushdi (har {IIKO_INTERVAL} s)", flush=True)
+    global _IIKO_THREAD
+    _IIKO_THREAD = threading.Thread(target=_iiko_loop, daemon=True, name="iiko-sync")
+    _IIKO_THREAD.start()
+    print(f">>> [MAXWAY] iiko sync ishga tushdi (har {IIKO_INTERVAL} s, "
+          f"pid={os.getpid()})", flush=True)
 
 
 start_iiko_worker()
@@ -3123,6 +3130,43 @@ def _iiko_webhook_rows(payload) -> list:
     return rows
 
 
+# Webhook turtkisi: iiko stop-list o'zgarganini o'zi aytadi, biz darrov
+# sinxronlaymiz. Fon oqimiga qaraganda ishonchliroq — kelgan so'rovning o'zi
+# ilovani uyg'otadi va yangilanish 2 daqiqa emas, bir necha soniyada ko'rinadi.
+IIKO_KICK_MIN_GAP = 15           # bir necha filial birdan xabar bersa — bir marta
+_iiko_kick_at = 0.0
+_iiko_kick_lock = threading.Lock()
+
+
+def _iiko_kick_sync():
+    """Webhook kelganda sinxronizatsiyani fonda ishga tushiradi.
+
+    Tez-tez kelganda takror ishga tushmasin: IIKO_KICK_MIN_GAP soniyadan
+    tez-tez emas. Bir vaqtda ikki sinxron ketishidan iiko_sync jadvalidagi
+    qulf himoya qiladi."""
+    import time as _t
+    global _iiko_kick_at
+    with _iiko_kick_lock:
+        if _t.monotonic() - _iiko_kick_at < IIKO_KICK_MIN_GAP:
+            return False
+        _iiko_kick_at = _t.monotonic()
+
+    def _run():
+        db = SessionLocal()
+        try:
+            res = iiko_sync_locked(db)
+            if res.get("added") or res.get("resolved"):
+                print(f">>> [MAXWAY] iiko webhook turtkisi: +{res.get('added')} "
+                      f"-{res.get('resolved')}", flush=True)
+        except Exception as e:
+            print(">>> [MAXWAY] iiko webhook turtkisi xato:", e, flush=True)
+        finally:
+            db.close()
+
+    threading.Thread(target=_run, daemon=True, name="iiko-kick").start()
+    return True
+
+
 def _iiko_webhook_prune(db: Session):
     """Jurnal cheksiz o'smasin — oxirgi IIKO_WEBHOOK_KEEP tadan boshqasi o'chadi."""
     try:
@@ -3181,6 +3225,10 @@ async def iiko_webhook(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         print(">>> [MAXWAY] iiko webhook: jurnalga yozib bo'lmadi:", e, flush=True)
+    # stop-list o'zgargan bo'lsa — darrov sinxronlaymiz (payloadda taomlar
+    # kelmaydi, faqat «o'zgardi» degan xabar, shuning uchun API'dan o'qiymiz)
+    if ok_auth and any(r["event_type"].lower() == "stoplistupdate" for r in keep):
+        _iiko_kick_sync()
     return JSONResponse({"ok": True})
 
 
@@ -3929,6 +3977,10 @@ def api_iiko_status(request: Request, db: Session = Depends(get_db)):
                                    if b.iiko_synced_at else None}
                      for b in branches],
         "linked": sum(1 for b in branches if (b.iiko_terminal_id or "").strip()),
+        # fon oqimi shu jarayonda tirikmi (WEB_CONCURRENCY tufayli javob
+        # beradigan worker har safar boshqa bo'lishi mumkin)
+        "worker_alive": bool(_IIKO_THREAD and _IIKO_THREAD.is_alive()),
+        "pid": os.getpid(),
         "webhook_token_set": bool(IIKO_WEBHOOK_TOKEN),
         "webhook_events": db.query(func.count(models.IikoWebhookEvent.id)).scalar() or 0,
         "webhook_last_at": (lambda e: e.received_at.strftime("%d.%m.%Y %H:%M:%S")

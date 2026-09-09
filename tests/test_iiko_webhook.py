@@ -188,3 +188,58 @@ def test_jurnal_faqat_adminga(client, db, seed, monkeypatch):
     data = r.json()
     assert data["total"] == 1
     assert data["events"][0]["type"] == "StopListUpdate"
+
+
+# ---------- webhook turtkisi: darrov sinxronlash ----------
+# Fon oqimi (har 2 daqiqa) production'da ishonchsiz chiqdi — Railway'da ilova
+# trafik bo'lmaganda uxlab qolishi mumkin. Webhook so'rovi esa ilovani
+# uyg'otadi, shuning uchun stop-list bir necha soniyada yangilanadi.
+
+def test_stoplist_hodisasi_sinxronni_ishga_tushiradi(client, db, monkeypatch):
+    monkeypatch.setattr(main, "IIKO_WEBHOOK_TOKEN", "s3cret")
+    turtki = []
+    monkeypatch.setattr(main, "_iiko_kick_sync", lambda: turtki.append(1))
+    client.post("/iiko/webhook", json=[{
+        "eventType": "StopListUpdate", "organizationId": "org-1",
+        "eventInfo": {"terminalGroupsStopListsUpdates": [
+            {"id": "tg-1", "isFull": False}]}}],
+        headers={"Authorization": "s3cret"})
+    assert turtki == [1]
+
+
+def test_boshqa_hodisa_sinxronni_ishga_tushirmaydi(client, db, monkeypatch):
+    monkeypatch.setattr(main, "IIKO_WEBHOOK_TOKEN", "s3cret")
+    turtki = []
+    monkeypatch.setattr(main, "_iiko_kick_sync", lambda: turtki.append(1))
+    client.post("/iiko/webhook", json=[{"eventType": "SomeOtherEvent"}],
+                headers={"Authorization": "s3cret"})
+    assert turtki == []
+
+
+def test_notogri_token_bilan_sinxron_ishga_tushmaydi(client, db, monkeypatch):
+    """Tashqaridan kelgan soxta so'rov sinxronni ishga tushira olmasin."""
+    monkeypatch.setattr(main, "IIKO_WEBHOOK_TOKEN", "s3cret")
+    turtki = []
+    monkeypatch.setattr(main, "_iiko_kick_sync", lambda: turtki.append(1))
+    client.post("/iiko/webhook", json=[{"eventType": "StopListUpdate"}],
+                headers={"Authorization": "boshqa"})
+    assert turtki == []
+
+
+def test_turtki_tez_tez_takrorlanmaydi(monkeypatch):
+    """22 filial birdan xabar bersa — sinxron bir marta ishga tushsin."""
+    ishga_tushdi = []
+
+    class FakeThread:
+        def __init__(self, target=None, **kw):
+            self.target = target
+
+        def start(self):
+            ishga_tushdi.append(1)
+
+    monkeypatch.setattr(main.threading, "Thread", FakeThread)
+    monkeypatch.setattr(main, "_iiko_kick_at", 0.0)
+    assert main._iiko_kick_sync() is True
+    for _ in range(5):
+        assert main._iiko_kick_sync() is False       # oraliq to'lmagan
+    assert ishga_tushdi == [1]
