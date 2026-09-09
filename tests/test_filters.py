@@ -121,3 +121,23 @@ def test_dashboard_still_ok_for_other_roles(client, seed, kpp_setup, who):
     assert "Последние заявки" in r.text               # filtrsiz — odatiy ko'rinish
     r2 = client.get("/dashboard?date_from=2020-01-01")
     assert "Результаты фильтра" in r2.text            # filtr bilan — natijalar
+
+
+def test_ispolniteli_sahifasida_faqat_ijrochilar(client, db, seed):
+    """«Исполнители» sahifasida faqat executor rolidagilar chiqishi kerak —
+    ilgari filial loginlari (Заказчик), КПП va kuzatuvchilar ham ko'rinardi."""
+    from app import models
+    ijrochi = models.User(full_name="Тестовый Исполнитель", email="ijrochi@t.uz",
+                          hashed_password="x", role=models.Role.executor, is_active=True)
+    db.add(ijrochi)
+    db.commit()
+    try:
+        c = login(client, seed["admin"])
+        html = c.get("/executors").text
+        assert "Тестовый Исполнитель" in html
+        # filial logini va kuzatuvchi bu yerda bo'lmasligi kerak
+        assert seed["branch"].full_name not in html
+        assert seed["viewer"].full_name not in html
+    finally:
+        db.delete(ijrochi)
+        db.commit()
