@@ -340,8 +340,17 @@ def send_telegram(chat_id: str, text: str, button_url: str = "",
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         data = urllib.parse.urlencode(params).encode()
         urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=8)
-    except Exception:
-        pass
+    except urllib.error.HTTPError as e:
+        # Telegram sababni tanada aytadi: «chat not found», «bot was blocked» va h.k.
+        # Ilgari hamma xato jim yutilardi va nega xabar kelmagani noma'lum qolardi.
+        sabab = ""
+        try:
+            sabab = json.loads(e.read().decode()).get("description", "")
+        except Exception:
+            pass
+        print(f">>> [MAXWAY] telegram {chat_id}: HTTP {e.code} {sabab}", flush=True)
+    except Exception as e:
+        print(f">>> [MAXWAY] telegram {chat_id}: {type(e).__name__}: {e}", flush=True)
 
 
 def branch_chat_ids(db: Session, r: models.Request, creator=None) -> List[str]:
@@ -698,7 +707,8 @@ def requests_page(request: Request, department_id: str = "",
 
 
 @app.get("/requests/{req_id}", response_class=HTMLResponse)
-def request_detail(req_id: int, request: Request, db: Session = Depends(get_db)):
+def request_detail(req_id: int, request: Request, ok: str = "", err: str = "",
+                   db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
@@ -714,7 +724,56 @@ def request_detail(req_id: int, request: Request, db: Session = Depends(get_db))
     return templates.TemplateResponse(request, "request_detail.html", {
         "request": request, "user": user, "active": "requests", "r": r,
         "executors": scoped_executors(db, user),
+        "ok_msg": ok, "err_msg": err,
     })
+
+
+@app.post("/requests/{req_id}/notify-again")
+def request_notify_again(req_id: int, request: Request, db: Session = Depends(get_db)):
+    """Zayavka bo'yicha telegram xabarini QAYTA yuboradi (faqat admin).
+
+    Sayt bildirishnomasi qayta yaratilmaydi — faqat telegram. Har bir qabul
+    qiluvchi bo'yicha natija qaytadi, shuning uchun kimga yetmagani ko'rinadi."""
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    if user.role != Role.admin:
+        raise HTTPException(status_code=403, detail="Только для администратора")
+    r = db.get(models.Request, req_id)
+    if not r:
+        raise HTTPException(404, "Заявка не найдена")
+    token = get_bot_token()
+    if not token:
+        return RedirectResponse(f"/requests/{req_id}?err=" + urllib.parse.quote(
+            "Токен бота не задан (MAXWAY_BOT_TOKEN)"), 302)
+
+    text = category_tg_text(r)
+    url = f"{get_app_url()}/requests/{r.id}"
+    yuborildi, xatolar, chatsiz = 0, [], 0
+    korilgan = set()
+    for u in category_notify_users(db, r.department_id, r.created_by):
+        cid = (u.telegram_chat_id or "").strip()
+        if not cid:
+            chatsiz += 1
+            continue
+        if cid in korilgan:                 # bitta chatga ikki marta yubormaymiz
+            continue
+        korilgan.add(cid)
+        res = _tg_api(token, "sendMessage", chat_id=cid, text=text, parse_mode="HTML",
+                      reply_markup=json.dumps({"inline_keyboard": [[
+                          {"text": "Открыть MAXWAY", "url": url}]]}))
+        if res.get("ok"):
+            yuborildi += 1
+        else:
+            xatolar.append(f"{u.full_name}: {res.get('description')}")
+    qismlar = [f"Отправлено: {yuborildi}"]
+    if chatsiz:
+        qismlar.append(f"без Telegram: {chatsiz}")
+    if xatolar:
+        qismlar.append("ошибки — " + "; ".join(xatolar[:4]))
+    key = "err" if (xatolar and not yuborildi) else "ok"
+    return RedirectResponse(f"/requests/{req_id}?{key}=" + urllib.parse.quote(
+        " · ".join(qismlar)), 302)
 
 
 @app.post("/requests/create")
@@ -800,27 +859,43 @@ def create_request(request: Request, title: str = Form(...), description: str = 
     return RedirectResponse(f"/requests/{r.id}", 302)
 
 
+def category_notify_users(db: Session, department_id, exclude_user_id=None):
+    """Zayavka ochilganda kimga xabar ketishi.
+
+    Bitta manba: xabar yuboruvchi ham, /api/request-notify-preview tashxisi ham
+    shu funksiyani ishlatadi — ro'yxatlar bir-biridan farq qilib qolmasin."""
+    q = db.query(models.User).filter(
+        models.User.is_active == True,
+        models.User.role.in_([Role.executor, Role.manager, Role.admin, Role.viewer]),
+        ((models.User.department_id == department_id)
+         | ((models.User.role == Role.admin) & (models.User.department_id.is_(None)))
+         | (models.User.role == Role.viewer))
+    )
+    if exclude_user_id is not None:
+        q = q.filter(models.User.id != exclude_user_id)
+    return q.all()
+
+
+def category_tg_text(r: models.Request) -> str:
+    """Zayavka haqidagi telegram xabari. Qayta yuborishda ham shu matn ketadi."""
+    dep = r.department
+    return (f"🔔 <b>Новая заявка — MAXWAY</b>\n\n"
+            f"📌 <b>{r.title}</b>\n"
+            f"🏷 Категория: {dep.name if dep else '—'}\n"
+            f"⚡️ Приоритет: {PRIORITY_LABELS.get(r.priority.value)}\n"
+            f"🏢 Филиал: {r.branch_obj.name if r.branch_obj else (r.branch or '—')}\n"
+            f"👤 Заказчик: {r.customer_name or '—'}\n"
+            f"📞 Телефон: {r.customer_phone or '—'}\n"
+            f"⏰ Дедлайн: {r.deadline.strftime('%d.%m.%Y') if r.deadline else '—'}")
+
+
 def notify_category(db: Session, r: models.Request):
     """Zayavка kategoriyasidagi xodimlarга va adminларга bildirishnoma (sayt + Telegram)."""
     dep = r.department
-    recipients = db.query(models.User).filter(
-        models.User.is_active == True,
-        models.User.id != r.created_by,
-        models.User.role.in_([Role.executor, Role.manager, Role.admin, Role.viewer]),
-        ((models.User.department_id == r.department_id)
-         | ((models.User.role == Role.admin) & (models.User.department_id.is_(None)))
-         | (models.User.role == Role.viewer))
-    ).all()
+    recipients = category_notify_users(db, r.department_id, r.created_by)
     seen = set()
     link = f"/requests/{r.id}"
-    tg_text = (f"🔔 <b>Новая заявка — MAXWAY</b>\n\n"
-               f"📌 <b>{r.title}</b>\n"
-               f"🏷 Категория: {dep.name if dep else '—'}\n"
-               f"⚡️ Приоритет: {PRIORITY_LABELS.get(r.priority.value)}\n"
-               f"🏢 Филиал: {r.branch_obj.name if r.branch_obj else (r.branch or '—')}\n"
-               f"👤 Заказчик: {r.customer_name or '—'}\n"
-               f"📞 Телефон: {r.customer_phone or '—'}\n"
-               f"⏰ Дедлайн: {r.deadline.strftime('%d.%m.%Y') if r.deadline else '—'}")
+    tg_text = category_tg_text(r)
     site_text = f"Новая заявка «{r.title}» — {dep.name if dep else 'без категории'}"
     for u in recipients:
         if u.id in seen:
@@ -3655,6 +3730,65 @@ def _tg_api(token: str, method: str, **params):
             return {"ok": False, "description": f"HTTP {e.code}"}
     except Exception as e:
         return {"ok": False, "description": str(e)}
+
+
+@app.get("/api/request-notify-preview")
+def api_request_notify_preview(request: Request, department_id: int = 0,
+                               check: str = "1", db: Session = Depends(get_db)):
+    """TASHXIS (faqat admin): zayavka ochilganda kimga telegram ketadi.
+
+    Hech qanday xabar YUBORMAYDI. «Zayavka ochildi, lekin xabar kelmadi»
+    holatida sababni shu yerdan ko'rish mumkin: token ishlayaptimi, kimda
+    chat_id bor, bot o'sha chatga yeta oladimi (/start bosilganmi)."""
+    user = current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    if user.role != Role.admin:
+        raise HTTPException(status_code=403, detail="Только для администратора")
+
+    token = get_bot_token()
+    bot = "—"
+    if token:
+        me = _tg_api(token, "getMe")
+        bot = "@" + me["result"]["username"] if me.get("ok") else               f"ТОКЕН НЕ РАБОТАЕТ: {me.get('description')}"
+
+    deps = ([db.get(models.Department, department_id)] if department_id
+            else db.query(models.Department).order_by(models.Department.name).all())
+    deps = [d for d in deps if d]
+    if department_id and not deps:
+        raise HTTPException(status_code=404, detail="Категория не найдена")
+
+    tekshirildi = {}
+    out = []
+    for d in deps:
+        rows = []
+        for u in category_notify_users(db, d.id):
+            row = {"user_id": u.id, "name": u.full_name, "role": u.role.value,
+                   "chat_id": u.telegram_chat_id or None}
+            if not u.telegram_chat_id:
+                row["error"] = "Telegram chat_id не указан в профиле"
+            elif check == "1" and token:
+                cid = u.telegram_chat_id
+                if cid not in tekshirildi:          # bitta chat bir marta so'raladi
+                    tekshirildi[cid] = _tg_api(token, "getChat", chat_id=cid)
+                res = tekshirildi[cid]
+                row["reachable"] = bool(res.get("ok"))
+                if res.get("ok"):
+                    c = res["result"]
+                    row["telegram"] = c.get("username") or " ".join(
+                        x for x in (c.get("first_name"), c.get("last_name")) if x)
+                else:
+                    row["error"] = res.get("description")
+            rows.append(row)
+        out.append({"department_id": d.id, "department": d.name,
+                    "recipients": rows,
+                    "with_chat_id": sum(1 for r in rows if r.get("chat_id"))})
+    return JSONResponse({
+        "bot": bot,
+        "token_set": bool(token),
+        "app_url": get_app_url(),
+        "categories": out,
+    })
 
 
 @app.get("/api/stop-reasons")
