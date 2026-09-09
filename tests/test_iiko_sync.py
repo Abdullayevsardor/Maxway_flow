@@ -360,3 +360,54 @@ def test_dateadd_yoq_bolsa_hozirgi_vaqt(db, iiko_env, monkeypatch):
         models.StopEntry.branch_id == b1.id,
         models.StopEntry.resolved == False).one()
     assert e.created_at is not None
+
+
+# ---------- bitta xabarda hamma taom nomi ----------
+# Talab: bir vaqtda bir nechta taom stopga tushsa yoki stopdan olinsa, botda
+# BITTA xabar kelsin va unda hamma taom nomi ko'rinsin (ilgari 15 tadan keyin
+# «…и ещё N» deb kesilardi).
+
+def test_dish_lines_hammasini_korsatadi():
+    nomlar = [f"Блюдо {i}" for i in range(40)]
+    qatorlar = main._dish_lines(nomlar)
+    assert qatorlar[0] == "🍽 Блюда (40):"
+    assert len(qatorlar) == 41                       # sarlavha + 40 ta taom
+    assert "…и ещё" not in "\n".join(qatorlar)
+    assert " • Блюдо 39" in qatorlar
+
+
+def test_dish_lines_telegram_chegarasida_toxtaydi():
+    """4096 belgidan oshib ketmasin — qolgani soni bilan aytiladi."""
+    nomlar = [f"Очень длинное название блюда номер {i:03}" for i in range(300)]
+    qatorlar = main._dish_lines(nomlar)
+    assert len("\n".join(qatorlar)) < main.TG_TEXT_LIMIT
+    assert qatorlar[-1].startswith(" • …и ещё")
+
+
+def test_bir_nechta_stop_bitta_xabarda(db, iiko_env, monkeypatch):
+    """Uchta taom birga stopga tushsa — bitta xabar, uchala nomi bilan."""
+    P3 = "44444444-4444-4444-4444-444444444444"
+    monkeypatch.setitem(NAMES, P3, "Третье из iiko")
+    run_sync(db, monkeypatch, {TG1: {}, TG2: {}})            # birinchi sinxron jim
+    iiko_env["sent"].clear()
+
+    run_sync(db, monkeypatch, {
+        TG1: {P_BURGER: 0.0, P_FRIES: 0.0, P3: 0.0}, TG2: {}})
+    assert len(iiko_env["sent"]) == 1, "har bir taomga alohida xabar ketmasin"
+    text = iiko_env["sent"][0][1]
+    assert "Блюда (3):" in text
+    for nom in ("Бургер из iiko", "Картофель из iiko", "Третье из iiko"):
+        assert nom in text
+
+
+def test_bir_nechta_yechim_bitta_xabarda(db, iiko_env, monkeypatch):
+    """Uchtasi birga stopdan olinsa ham — bitta xabar, uchala nomi bilan."""
+    run_sync(db, monkeypatch, {TG1: {}, TG2: {}})
+    run_sync(db, monkeypatch, {TG1: {P_BURGER: 0.0, P_FRIES: 0.0}, TG2: {}})
+    iiko_env["sent"].clear()
+
+    run_sync(db, monkeypatch, {TG1: {}, TG2: {}}, alive={TG1, TG2})
+    assert len(iiko_env["sent"]) == 1
+    text = iiko_env["sent"][0][1]
+    assert "Блюда (2):" in text
+    assert "Бургер из iiko" in text and "Картофель из iiko" in text

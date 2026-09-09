@@ -2442,6 +2442,29 @@ def stop_notify_targets(db: Session, branch_id: int, actor=None) -> List[str]:
     return [r["chat_id"] for r in stop_notify_rows(db, branch_id, actor)]
 
 
+# Telegram bitta xabarga 4096 belgi qo'yadi. Bir vaqtda bir nechta taom stopga
+# tushsa, BITTA xabarda hammasining nomi ko'rinishi kerak — shuning uchun
+# ro'yxat sun'iy ravishda qisqartirilmaydi, faqat shu chegara ushlab turadi.
+TG_TEXT_LIMIT = 4096
+TG_TEXT_SAFE = 3700          # sarlavha, izoh va oxirgi qatorlar uchun zaxira
+
+
+def _dish_lines(names, head: str = "🍽 Блюда") -> list:
+    """«🍽 Блюда (N):» va har bir taom alohida qatorda — hammasi.
+
+    Faqat Telegram chegarasiga yetganda qolgani soni bilan aytiladi."""
+    lines = [f"{head} ({len(names)}):"]
+    used = len(lines[0])
+    for i, n in enumerate(names):
+        row = f" • {n}"
+        if used + len(row) + 1 > TG_TEXT_SAFE:
+            lines.append(f" • …и ещё {len(names) - i}")
+            break
+        lines.append(row)
+        used += len(row) + 1
+    return lines
+
+
 def notify_stop_added(db: Session, created, actor):
     """Filialdan stopga taom qo'shilganda telegram xabari (bitta umumiy xabar)."""
     if not created:
@@ -2449,15 +2472,10 @@ def notify_stop_added(db: Session, created, actor):
     first = created[0]
     branch = first.branch or db.get(models.Branch, first.branch_id)
     dishes = [(e.menu_item.name if e.menu_item else "—") for e in created]
-    shown = dishes[:15]
-    more = len(dishes) - len(shown)
     lines = [f"🛑 <b>Новый стоп — MAXWAY</b>", "",
              f"🏢 Филиал: <b>{branch.name if branch else '—'}</b>",
-             f"🏷 Причина: {REASON_LABELS.get(first.reason, first.reason)}",
-             f"🍽 Блюда ({len(dishes)}):"]
-    lines += [f" • {n}" for n in shown]
-    if more > 0:
-        lines.append(f" • …и ещё {more}")
+             f"🏷 Причина: {REASON_LABELS.get(first.reason, first.reason)}"]
+    lines += _dish_lines(dishes)
     if first.comment:
         lines.append(f"💬 Комментарий филиала: {first.comment}")
     # iiko avtomatikasida «kim qo'shgani» yo'q — manbani ko'rsatamiz
@@ -2518,11 +2536,7 @@ def notify_stop_resolved(db: Session, entries, actor):
             link = f"/stoplist/{e.id}"
         else:
             names = [(x.menu_item.name if x.menu_item else "—") for x in items]
-            shown, more = names[:15], len(names) - 15
-            lines.append(f"🍽 Блюда ({len(names)}):")
-            lines += [f" • {n}" for n in shown]
-            if more > 0:
-                lines.append(f" • …и ещё {more}")
+            lines += _dish_lines(names)
             link = "/stoplist/history"
         lines.append(f"👤 Снял: {display_name(actor)}" if actor
                      else "🤖 Снято автоматически (iiko)")
