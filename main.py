@@ -2336,7 +2336,6 @@ def _stoplist_context(request: Request, db: Session, user, resolved: bool,
         "cur_month": models.tashkent_now().strftime("%Y-%m"),
         # iiko boshqaradigan filialga qo'lda qo'shilmaydi — ro'yxat avtomatik to'ladi
         "can_add": has_perm(user, "add_stop") and not _add_blocked_by_iiko(db, user),
-        "can_resolve": has_perm(user, "resolve_stop"),
         "iiko_on": iiko.iiko_enabled(),
         "can_comment": has_perm(user, "comment_stop"),
         "can_confirm": has_perm(user, "confirm_stop"),
@@ -3831,8 +3830,6 @@ def stoplist_detail(sid: int, request: Request, ok: str = "", err: str = "",
         "can_edit_branch": can_edit_stop_branch_fields(user, e),
         "can_edit_supply": can_edit_stop_supply_comment(user, e),
         "can_confirm": can_confirm_stop(user, e),
-        # tugma endpoint bilan bir xil qoidaga tayanadi — ko'rinib turib 403 bermasin
-        "can_resolve": _can_resolve_entry(user, e),
     })
 
 

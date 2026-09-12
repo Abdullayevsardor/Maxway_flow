@@ -152,3 +152,12 @@ def test_client_sees_no_action_buttons(client, seed, rows):
     targets, doc, _ = button_targets(html)
     assert not any(t in ("Убрать", "Сохранить") for t, _a, _h in targets)
     assert not [i for i in doc.findall(".//input") if i.get("name") == "comment"]
+
+
+def test_yozuv_sahifasida_ham_olish_tugmasi_yoq(client, seed, rows):
+    """Yozuv (detal) sahifasida ham «Убрать со стопа» bo'lmasligi kerak —
+    stopdan olish faqat iiko orqali."""
+    login(client, seed["supply"])
+    html = client.get(f"/stoplist/{rows['open'][0].id}").text
+    assert "Убрать со стопа" not in html
+    assert "/resolve" not in html

@@ -11,13 +11,8 @@
     <p><a href="{{ '/stoplist/history' if e.resolved else '/stoplist' }}" class="link-blue">← {{ 'К истории' if e.resolved else 'К стоп-листу' }}</a></p>
   </div>
   <div class="head-actions">
+    {# Stopdan olish loyihadan qilinmaydi — ro'yxatni iiko boshqaradi #}
     {% if can_edit_any %}<button class="btn btn-blue" onclick="openEdit()">Изменить</button>{% endif %}
-    {% if can_resolve and not e.resolved %}
-    <form method="post" action="/stoplist/{{ e.id }}/resolve" style="margin:0"
-          onsubmit="return confirm('Убрать из стоп-листа?')">
-      <button type="submit" class="btn btn-light" style="color:var(--green);border-color:#86efac">Убрать со стопа</button>
-    </form>
-    {% endif %}
   </div>
 </div>
 
