@@ -121,7 +121,9 @@ def test_ikkinchi_sinxronda_yangi_stop_telegramga_ketadi(db, iiko_env, monkeypat
     assert active_names(db, iiko_env["b1"]) == ["Бургер из iiko", "Картофель из iiko"]
     assert len(iiko_env["sent"]) == 1
     assert "Картофель из iiko" in iiko_env["sent"][0][1]
-    assert "iiko" in iiko_env["sent"][0][1]          # manba ko'rsatilgan
+    # manba haqidagi qator xabarda ko'rsatilmaydi (faqat odam qo'shsa «Добавил»)
+    assert "Источник" not in iiko_env["sent"][0][1]
+    assert "Добавил" not in iiko_env["sent"][0][1]
 
 
 def test_iikodan_yoqolgan_pozitsiya_stopdan_olinadi(db, iiko_env, monkeypatch):

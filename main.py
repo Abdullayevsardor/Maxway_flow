@@ -2525,9 +2525,10 @@ def notify_stop_added(db: Session, created, actor):
     lines += _dish_lines(dishes)
     if first.comment:
         lines.append(f"💬 Комментарий филиала: {first.comment}")
-    # iiko avtomatikasida «kim qo'shgani» yo'q — manbani ko'rsatamiz
-    lines.append(f"👤 Добавил: {display_name(actor)}" if actor
-                 else "🤖 Источник: iiko (автоматически)")
+    # iiko avtomatikasida «kim qo'shgani» yo'q — bunday holda qator umuman
+    # yozilmaydi (manba haqidagi eslatma xabarda keraksiz edi)
+    if actor:
+        lines.append(f"👤 Добавил: {display_name(actor)}")
     if first.reason == REASON_NOT_SET:
         lines.append("❗️ Причина не указана — уточните на сайте")
     lines.append(f"🕑 {first.created_at.strftime('%d.%m.%Y %H:%M')}"
