@@ -72,7 +72,7 @@
     </div>
 
     {# Qator formalari — jadvaldan tashqarida (tugmalar form="..." orqali bog'lanadi) #}
-    {% for e in history %}{{ sp.row_forms(e, can_confirm, can_comment, false) }}{% endfor %}
+    {% for e in history %}{{ sp.row_forms(e, can_confirm, can_comment) }}{% endfor %}
 
     {{ sp.pager('/stoplist/history', qs, pg, sort_by, sort_order) }}
     {% endif %}

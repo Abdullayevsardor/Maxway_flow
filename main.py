@@ -2033,9 +2033,6 @@ def has_perm(user, key):
 
 # shablonlarда `can(user, 'create_request')` sifatida ishlatiladi
 templates.env.globals["can"] = has_perm
-# jadvalda har bir qator uchun: shu yozuvni stopdan olsa bo'ladimi
-# (iiko boshqaradigan yozuvlarda tugma umuman ko'rsatilmaydi)
-templates.env.globals["can_resolve_row"] = lambda user, e: _can_resolve_entry(user, e)
 templates.env.globals["is_protected_user"] = is_protected_user
 templates.env.globals["PERMISSION_DEFS"] = PERMISSION_DEFS
 
@@ -2741,8 +2738,9 @@ def notify_stop_resolved(db: Session, entries, actor):
                 names.append(f"{nm} — {dur}" if dur else nm)
             lines += _dish_lines(names)
             link = "/stoplist/history"
-        lines.append(f"👤 Снял: {display_name(actor)}" if actor
-                     else "🤖 Снято автоматически (iiko)")
+        # iiko o'zi yechganda «kim» degan qator yozilmaydi
+        if actor:
+            lines.append(f"👤 Снял: {display_name(actor)}")
         done_at = items[0].resolved_at
         if done_at:
             lines.append(f"🕑 {done_at.strftime('%d.%m.%Y %H:%M')}")

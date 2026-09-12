@@ -1,10 +1,13 @@
 """Stop-list jadvalidagi tugmalar HAQIQATDA qaysi manzilga yuborishini tekshiradi.
 
-Nega kerak: jadvalni ommaviy «Убрать со стопа» formasi o'rab turadi. Agar qator
-formalari jadval ICHIDA yozilsa, HTML forma ichida formaga ruxsat bermagani
-uchun brauzer ularni tashlab yuboradi va tugma ommaviy formaga ketadi —
-hech qanday xatosiz, jimgina. Oddiy `in r.text` tekshiruvi buni ko'rmaydi,
+Nega kerak: qator formalari jadval ICHIDA yozilsa, HTML forma ichida formaga
+ruxsat bermagani uchun brauzer ularni jimgina tashlab yuboradi va tugma
+noto'g'ri manzilga ketadi. Oddiy `in r.text` tekshiruvi buni ko'rmaydi,
 shuning uchun bu yerda haqiqiy HTML5 parseri (html5lib) ishlatiladi.
+
+Stopga qo'yish va stopdan olish loyihadan qilinmaydi (ro'yxatni iiko
+boshqaradi), shuning uchun jadvalda «Убрать» tugmasi ham, tanlash
+katakchalari ham bo'lmasligi kerak — buni ham shu yerda qo'riqlaymiz.
 """
 import pytest
 
@@ -82,26 +85,33 @@ def test_every_row_button_hits_its_own_endpoint(client, seed, rows):
     for text, action, _hidden in targets:
         if text in ("ДА", "НЕТ"):
             assert "/confirm" in action, f"«{text}» -> {action}"
-        elif text == "Убрать":
-            assert "/resolve" in action and "bulk" not in action, f"«{text}» -> {action}"
         elif text == "Сохранить":
             assert "/comment" in action, f"«{text}» -> {action}"
 
-    # har bir ochiq yozuv uchun uchala tugma ham bor
+    # har bir ochiq yozuv uchun ikkala forma ham bor
     for e in rows["open"]:
         acts = [a for _t, a, _h in targets if a]
         assert f"/stoplist/{e.id}/confirm" in acts
-        assert f"/stoplist/{e.id}/resolve" in acts
         assert f"/stoplist/{e.id}/comment" in acts
 
 
-def test_default_state_shows_remove_not_save(client, seed, rows):
-    """Standart holat: «Убрать» ko'rinadi, «Сохранить» yashirin."""
+def test_stopdan_olish_tugmalari_yoq(client, seed, rows):
+    """Stop-listda «Убрать», tanlash katakchasi va ommaviy panel bo'lmaydi."""
+    login(client, seed["supply"])
+    html = client.get("/stoplist").text
+    targets, doc, _ = button_targets(html)
+    assert not any(t == "Убрать" for t, _a, _h in targets)
+    assert "Убрать со стопа" not in html
+    assert "Снять выделение" not in html
+    assert not [i for i in doc.findall(".//input") if i.get("name") == "sid"]
+    assert "/stoplist/resolve-bulk" not in html
+
+
+def test_default_state_hides_save(client, seed, rows):
+    """«Сохранить» izoh o'zgarmaguncha yashirin turadi."""
     login(client, seed["supply"])
     targets, _, _ = button_targets(client.get("/stoplist").text)
-    remove = [(t, h) for t, a, h in targets if t == "Убрать"]
     save = [(t, h) for t, a, h in targets if t == "Сохранить"]
-    assert remove and all(not hidden for _t, hidden in remove), "«Убрать» ko'rinishi kerak"
     assert save and all(hidden for _t, hidden in save), "«Сохранить» boshida yashirin bo'lishi kerak"
 
 
@@ -135,11 +145,10 @@ def test_history_buttons_also_bound(client, seed, rows):
         "tarixda «Убрать» bo'lmasligi kerak"
 
 
-def test_client_without_comment_perm_sees_only_remove(client, seed, rows):
-    """Izoh huquqi yo'q filial: faqat «Убрать», izoh maydoni yo'q."""
+def test_client_sees_no_action_buttons(client, seed, rows):
+    """Izoh huquqi yo'q filial: jadvalda umuman amal tugmasi yo'q."""
     login(client, seed["branch"])
     html = client.get("/stoplist").text
     targets, doc, _ = button_targets(html)
-    assert any(t == "Убрать" for t, _a, _h in targets)
-    assert not any(t == "Сохранить" for t, _a, _h in targets)
+    assert not any(t in ("Убрать", "Сохранить") for t, _a, _h in targets)
     assert not [i for i in doc.findall(".//input") if i.get("name") == "comment"]

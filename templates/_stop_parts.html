@@ -94,15 +94,16 @@
 
 {# Подтверждение ustuni: ДА/НЕТ tegi, ruxsat bo'lsa — bosiladigan pereklyuchatel #}
 {# ===== Qator amallari =====
-   MUHIM: qator formalari jadval ichida YOZILMAYDI. Jadvalni ommaviy
-   «Убрать со стопа» formasi o'rab turadi, HTML esa forma ichida forma
-   ochishга ruxsat bermaydi — brauzer uni tashlab yuboradi va tugma
-   noto'g'ri manzilga ketadi. Shuning uchun formalar `row_forms()` bilan
-   jadvaldan tashqarida chiqariladi, tugmalar esa `form="..."` atributi
-   orqali ularga bog'lanadi. #}
+   Stopga qo'yish va stopdan olish loyihadan qilinmaydi — ro'yxatni iiko
+   boshqaradi. Shu sababli qatorda faqat ДА/НЕТ va снабжение izohi qoladi.
+
+   MUHIM: qator formalari jadval ICHIDA yozilmaydi — HTML forma ichida forma
+   ochishga ruxsat bermaydi va brauzer uni jimgina tashlab yuboradi. Shuning
+   uchun ular `row_forms()` bilan jadvaldan tashqarida chiqariladi, tugmalar
+   esa `form="..."` atributi orqali ularga bog'lanadi. #}
 
 {# Har bir yozuv uchun formalar. Jadvaldan TASHQARIDA chaqirilishi shart. #}
-{% macro row_forms(e, can_confirm, can_comment, can_resolve) %}
+{% macro row_forms(e, can_confirm, can_comment) %}
   {% if can_confirm %}
   <form method="post" action="/stoplist/{{ e.id }}/confirm" id="xf{{ e.id }}" hidden>
     <input type="hidden" name="supply_confirmed" value="{{ 0 if e.supply_confirmed else 1 }}">
@@ -111,11 +112,6 @@
   {% if can_comment %}
   <form method="post" action="/stoplist/{{ e.id }}/comment" id="cf{{ e.id }}"
         autocomplete="off" hidden></form>
-  {% endif %}
-  {% if can_resolve %}
-  <form method="post" action="/stoplist/{{ e.id }}/resolve" id="rf{{ e.id }}" hidden
-        data-dish="{{ e.menu_item.name if e.menu_item else '' }}"
-        onsubmit="return confirm('Убрать «' + this.dataset.dish + '» из стоп-листа?')"></form>
   {% endif %}
 {% endmacro %}
 
@@ -130,8 +126,7 @@
 </td>
 {% endmacro %}
 
-{# Снабжение izohi. inline_save=true — saqlash tugmasi shu yacheykada
-   (tarix sahifasi, u yerda «Убрать» yo'q). #}
+{# Снабжение izohi. inline_save=true — saqlash tugmasi shu yacheykada. #}
 {% macro comment_cell(e, can_comment, inline_save=false) %}
 <td data-label="Комм. снабжения" class="cmt-cell">
   {% if can_comment %}
@@ -148,13 +143,9 @@
 </td>
 {% endmacro %}
 
-{# Amal ustuni: standart holatda «Убрать», izoh tahrirlansa — «Сохранить». #}
-{% macro action_cell(e, can_resolve, can_comment) %}
+{# Amal ustuni: izoh o'zgarganda «Сохранить» chiqadi. #}
+{% macro action_cell(e, can_comment) %}
 <td data-label="" class="act-cell">
-  {% if can_resolve %}
-  <button type="submit" form="rf{{ e.id }}" class="act-btn act-remove"
-          data-row="{{ e.id }}">Убрать</button>
-  {% endif %}
   {% if can_comment %}
   <button type="submit" form="cf{{ e.id }}" class="act-btn act-save"
           data-row="{{ e.id }}" hidden>Сохранить</button>
@@ -162,8 +153,8 @@
 </td>
 {% endmacro %}
 
-{# Izoh o'zgarganda «Убрать» → «Сохранить». Saqlangach sahifa yangilanadi
-   va tugma o'z-o'zidan «Убрать» holatiga qaytadi. #}
+{# Izoh o'zgarganda «Сохранить» tugmasi paydo bo'ladi; saqlangach sahifa
+   yangilanadi va tugma yana yashirinadi. #}
 {% macro action_script() %}
 <style>
   .cmt-wrap{display:flex;gap:6px;align-items:center;min-width:190px}
@@ -175,8 +166,6 @@
            border:1px solid transparent;cursor:pointer;line-height:1.4;
            transition:background .15s,border-color .15s,color .15s}
   .act-btn[hidden]{display:none}
-  .act-remove{color:#16a34a;background:#f0fdf4;border-color:#bbf7d0}
-  .act-remove:hover{background:#dcfce7;border-color:#86efac}
   .act-save{color:#fff;background:var(--blue);border-color:var(--blue)}
   .act-save:hover{filter:brightness(1.07)}
   .act-save:focus-visible{outline:2px solid #93c5fd;outline-offset:2px}
@@ -186,13 +175,12 @@
   function pick(cls, id){ return document.querySelector(cls + '[data-row="' + id + '"]'); }
   document.querySelectorAll('.cmt-inp').forEach(function(inp){
     var id = inp.dataset.row;
-    var save = pick('.act-save', id), remove = pick('.act-remove', id);
+    var save = pick('.act-save', id);
     function sync(){
       var dirty = inp.value !== inp.dataset.orig;
       inp.classList.toggle('dirty', dirty);
       if(!save) return;                 // izoh huquqi yo'q — tegmaymiz
       save.hidden = !dirty;
-      if(remove) remove.hidden = dirty; // «Убрать» o'rnini «Сохранить» egallaydi
     }
     inp.addEventListener('input', sync);
     inp.addEventListener('keydown', function(ev){
@@ -210,7 +198,7 @@
 {% endmacro %}
 
 {# Qatorni bosib yozuv sahifasiga o'tish.
-   Ichidagi maydonlar (izoh, ДА/НЕТ tugmasi, «Убрать») bosilganda o'tmaydi. #}
+   Ichidagi maydonlar (izoh, ДА/НЕТ tugmasi) bosilganda o'tmaydi. #}
 {% macro row_link_script() %}
 <script>
 (function(){

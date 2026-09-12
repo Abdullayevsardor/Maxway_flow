@@ -36,42 +36,24 @@
       <span>{% if has_filters %}Попробуйте изменить или сбросить фильтры{% else %}Стоп-лист пуст{% endif %}</span>
     </div>
     {% else %}
-    <form method="post" action="/stoplist/resolve-bulk" id="bulkForm">
+    {# Stopga qo'yish ham, stopdan olish ham loyihadan qilinmaydi — ro'yxatni
+       iiko boshqaradi. Shu sababli tanlash ustuni ham, «Убрать со стопа»
+       tugmasi ham yo'q. #}
     <div class="tbl-wrap">
     <table class="stop-tbl">
       <thead><tr>
-        {% if can_resolve %}
-        <th style="width:1%">
-          <label class="pick" title="Выбрать все на странице">
-            <input type="checkbox" id="pickAll" onchange="pickAllRows(this)">
-            <span class="pick-box"></span>
-          </label>
-        </th>
-        {% endif %}
         {{ sp.sort_th('Добавлено', 'created_at', '/stoplist', qs, sort_by, sort_order, '130px') }}
         {% if not is_client %}{{ sp.sort_th('Филиал', 'branch', '/stoplist', qs, sort_by, sort_order) }}{% endif %}
         {{ sp.sort_th('Блюдо', 'dish', '/stoplist', qs, sort_by, sort_order) }}
         {{ sp.sort_th('Причина', 'reason', '/stoplist', qs, sort_by, sort_order) }}
         {{ sp.sort_th('Подтверждение', 'supply_confirmed', '/stoplist', qs, sort_by, sort_order, '150px') }}
         {{ sp.sort_th('Комм. снабжения', 'supply_comment', '/stoplist', qs, sort_by, sort_order) }}
-        {% if can_resolve or can_comment %}<th style="width:1%"></th>{% endif %}
+        {% if can_comment %}<th style="width:1%"></th>{% endif %}
       </tr></thead>
       <tbody>
         {% for e in entries %}
         {# butun qator bosiladigan — yozuv sahifasiga o'tadi #}
-        {# iiko boshqaradigan yozuvni qo'lda olib bo'lmaydi — u yerda tanlov ham yo'q #}
-        {% set row_resolve = can_resolve and can_resolve_row(user, e) %}
         <tr class="row-link" data-href="/stoplist/{{ e.id }}" tabindex="0">
-          {% if can_resolve %}
-          <td data-label="" class="pick-cell">
-            {% if row_resolve %}
-            <label class="pick" title="Выбрать">
-              <input type="checkbox" name="sid" value="{{ e.id }}" onchange="syncPicked()">
-              <span class="pick-box"></span>
-            </label>
-            {% endif %}
-          </td>
-          {% endif %}
           <td data-label="Добавлено" class="when-cell">
             <div class="d">{{ e.created_at.strftime('%d.%m.%Y') }}</div>
             <div class="t">{{ e.created_at.strftime('%H:%M') }}</div>
@@ -83,71 +65,22 @@
           <td data-label="Причина"><span class="reason-tag">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></td>
           {{ sp.confirm_cell(e, can_confirm) }}
           {{ sp.comment_cell(e, can_comment) }}
-          {% if can_resolve or can_comment %}{{ sp.action_cell(e, row_resolve, can_comment) }}{% endif %}
+          {% if can_comment %}{{ sp.action_cell(e, can_comment) }}{% endif %}
         </tr>
         {% endfor %}
       </tbody>
     </table>
     </div>
-    {% if can_resolve %}
-    <div class="bulk-bar" id="bulkBar" hidden>
-      <span>Выбрано: <b id="pickCount">0</b></span>
-      <div>
-        <button type="button" class="btn btn-light" onclick="clearPicked()">Снять выделение</button>
-        <button type="submit" class="btn btn-blue" id="bulkBtn">Убрать со стопа</button>
-      </div>
-    </div>
-    {% endif %}
-    </form>
 
-    {# Qator formalari — ommaviy formadan TASHQARIDA (forma ichida forma bo'lmaydi).
-       Yuqoridagi tugmalar bularga form="..." atributi orqali bog'langan. #}
-    {% for e in entries %}{{ sp.row_forms(e, can_confirm, can_comment, can_resolve and can_resolve_row(user, e)) }}{% endfor %}
+    {# Qator formalari — jadvaldan tashqarida, tugmalar ularga form="..." orqali
+       bog'langan (jadval ichida forma yozilsa brauzer uni tashlab yuboradi). #}
+    {% for e in entries %}{{ sp.row_forms(e, can_confirm, can_comment) }}{% endfor %}
 
     {{ sp.pager('/stoplist', qs, pg, sort_by, sort_order) }}
     {% endif %}
   </div>
 </div>
 
-
-{% if can_resolve %}
-<script>
-  function picked(){ return [...document.querySelectorAll('input[name="sid"]:checked')]; }
-  function syncPicked(){
-    var n = picked().length;
-    document.getElementById('pickCount').textContent = n;
-    document.getElementById('bulkBar').hidden = n === 0;
-    var all = document.querySelectorAll('input[name="sid"]').length;
-    var box = document.getElementById('pickAll');
-    box.checked = n > 0 && n === all;
-    box.indeterminate = n > 0 && n < all;
-  }
-  function pickAllRows(box){
-    document.querySelectorAll('input[name="sid"]').forEach(function(c){ c.checked = box.checked; });
-    syncPicked();
-  }
-  function clearPicked(){
-    document.querySelectorAll('input[name="sid"]').forEach(function(c){ c.checked = false; });
-    syncPicked();
-  }
-  document.getElementById('bulkForm').addEventListener('submit', function(ev){
-    var items = picked();
-    if(!items.length){ ev.preventDefault(); return; }
-    var names = items.map(function(c){
-      var row = c.closest('tr');
-      var el = row.querySelector('.dish-cell');
-      return el ? el.textContent.trim() : '';
-    });
-    var msg = 'Убрать со стопа ' + items.length + ' поз.?\n\n'
-              + names.slice(0, 10).join('\n')
-              + (names.length > 10 ? '\n…и ещё ' + (names.length - 10) : '');
-    if(!confirm(msg)){ ev.preventDefault(); return; }
-    var b = document.getElementById('bulkBtn');
-    b.disabled = true; b.textContent = 'Убираем…';
-  });
-  syncPicked();
-</script>
-{% endif %}
 
 {{ sp.action_script() }}
 {{ sp.row_link_script() }}
