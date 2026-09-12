@@ -14,7 +14,16 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from . import models
 
-SECRET_KEY = os.environ.get("MAXWAY_SECRET", "MAXWAY-secret-key-uni-productionda-ozgartiring-2026")
+_DEFAULT_SECRET = "MAXWAY-secret-key-uni-productionda-ozgartiring-2026"
+SECRET_KEY = os.environ.get("MAXWAY_SECRET", "").strip() or _DEFAULT_SECRET
+# Standart kalit ochiq kodda turadi: uni bilgan odam istalgan foydalanuvchi
+# (jumladan admin) nomidan token yasay oladi. Productionда MAXWAY_SECRET
+# albatta qo'yilishi kerak — startupда baland ovozda eslatamiz.
+if SECRET_KEY == _DEFAULT_SECRET:
+    # Emoji ishlatilmaydi: bu qator ilovaning eng birinchi printi va Windows
+    # konsoli (cp1251) emojini chiqara olmay ilovani ko'tarilmay qoldirardi.
+    print(">>> [MAXWAY] DIQQAT: MAXWAY_SECRET qo'yilmagan - standart kalit "
+          "ishlatilmoqda. Productionda uni albatta o'rnating!", flush=True)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 120  # 2 soat
 COOKIE_NAME = "maxway_token"
@@ -63,6 +72,12 @@ def decode_token(token: str) -> Optional[int]:
         return None
 
 
+def is_disabled(user) -> bool:
+    """Akkaunt o'chirilganmi. NULL (eski, migratsiyadan qolgan qatorlar) —
+    faol deb qaraladi, aks holda ular tasodifan bloklanib qolardi."""
+    return bool(user) and user.is_active is not None and not user.is_active
+
+
 def get_current_user_optional(
     request: Request, db: Session = Depends(get_db)
 ) -> Optional[models.User]:
@@ -73,7 +88,9 @@ def get_current_user_optional(
     user_id = decode_token(token)
     if not user_id:
         return None
-    return db.query(models.User).filter(models.User.id == user_id).first()
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    # o'chirilgan akkaunt — kirmagan hisoblanadi (eski cookie ham ishlamaydi)
+    return None if (user and is_disabled(user)) else user
 
 
 def require_user(

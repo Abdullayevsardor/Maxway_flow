@@ -701,6 +701,28 @@ img, video, table { max-width: 100%; }
   border-radius:999px;white-space:nowrap}
 .cmt-cell{color:#475569;font-size:13.5px;max-width:260px}
 
+/* «На стопе был» — filial grafigi bo'yicha hisoblangan muddat */
+.dur-cell{white-space:nowrap}
+.dur-tag{display:inline-block;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;
+  font-weight:700;font-size:12px;padding:3px 9px;border-radius:999px;
+  font-variant-numeric:tabular-nums}
+
+/* `tight` — tarix jadvali: ustun ko'p, shuning uchun ustunlar bir-biriga
+   yaqinroq turadi (bo'sh joy kamayadi, matn o'lchami deyarli o'zgarmaydi). */
+.stop-tbl.tight{min-width:1030px}
+.stop-tbl.tight thead th{padding:0 8px 9px;font-size:10.5px;letter-spacing:.03em}
+.stop-tbl.tight td{padding:9px 8px}
+.stop-tbl.tight .dish-cell{font-size:13.5px}
+.stop-tbl.tight .branch-cell{font-size:12.5px}
+.stop-tbl.tight .when-cell .d{font-size:12.5px}
+.stop-tbl.tight .when-cell .t{font-size:11.5px}
+.stop-tbl.tight .reason-tag,
+.stop-tbl.tight .conf-tag,
+.stop-tbl.tight .dur-tag{font-size:11.5px;padding:3px 9px}
+.stop-tbl.tight .cmt-cell{max-width:210px}
+.stop-tbl.tight .cmt-wrap{min-width:150px}
+.stop-tbl.tight .cmt-inp{padding:5px 8px;font-size:12.5px}
+
 /* Sarlavhadagi saralash havolasi */
 .sort-link{display:inline-flex;align-items:center;gap:4px;color:#94a3b8;font-weight:700}
 .sort-link:hover{color:var(--blue)}
@@ -808,6 +830,8 @@ img, video, table { max-width: 100%; }
 /* --- Planshet va kichik noutbuk (761–1100px) --- */
 @media(max-width:1100px){
   .stop-tbl td{padding:10px 11px}
+  .stop-tbl.tight td{padding:8px 6px}
+  .stop-tbl.tight .cmt-cell{max-width:170px}
   .stop-tbl .dish-cell{font-size:13.5px}
   .cmt-cell{max-width:190px;font-size:13px}
   .stop-filter .inp{max-width:170px}
@@ -815,7 +839,7 @@ img, video, table { max-width: 100%; }
 
 /* --- Telefon (≤760px): jadval kartochkaga aylanadi --- */
 @media(max-width:760px){
-  .stop-tbl{min-width:0}                  /* kartochka rejimida scroll shart emas */
+  .stop-tbl,.stop-tbl.tight{min-width:0}  /* kartochka rejimida scroll shart emas */
   .tbl-wrap{overflow-x:visible;margin:0}
   .info-row{grid-template-columns:1fr;gap:4px;padding:10px 0}
   .pager{flex-direction:column;align-items:stretch;gap:10px}

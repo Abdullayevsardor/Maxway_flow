@@ -342,7 +342,8 @@
       <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px">
         <p style="font-weight:500;color:#475569;margin-bottom:10px;font-size:13px">🍽 Связь с iiko — стоп-лист филиала берётся из этой терминальной группы</p>
         <div class="field">
-          <select name="iiko_bind" id="b_iiko"><option value="">— не связан —</option></select>
+          {# qiymat «-»: bo'sh matn serverga «maydon yuborilmagan» bo'lib yetadi #}
+          <select name="iiko_bind" id="b_iiko"><option value="-">— не связан —</option></select>
           <!-- iiko javob bermasa: GUID ni qo'lda kiritish (disabled maydon yuborilmaydi) -->
           <input type="text" name="iiko_bind" id="b_iiko_manual" disabled
                  style="display:none;margin-top:8px"
@@ -477,7 +478,8 @@
       sel.style.display=''; sel.disabled=false;
       manual.style.display='none'; manual.disabled=true;
       note.style.display='none';
-      sel.innerHTML='<option value="">— не связан —</option>';
+      // «-» — serverga «bog'lanishni uz» degan aniq buyruq (bo'sh matn yo'qoladi)
+      sel.innerHTML='<option value="-">— не связан —</option>';
       var found=false;
       data.groups.forEach(function(g){
         var o=document.createElement('option');
@@ -495,7 +497,7 @@
       }
     }
     if(iikoCache){ fill(iikoCache); return; }
-    sel.innerHTML='<option value="">Загрузка из iiko…</option>';
+    sel.innerHTML='<option value="-">Загрузка из iiko…</option>';
     fetch('/api/iiko/terminals').then(r=>r.json()).then(function(data){
       iikoCache=data; fill(data);
     }).catch(function(e){ fill({ok:false, error:String(e)}); });

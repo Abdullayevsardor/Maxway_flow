@@ -61,6 +61,11 @@
       {% if e.resolved %}
       <div class="info-row"><div class="k">Убрано со стопа</div>
         <div class="v">{{ e.resolved_at.strftime('%d.%m.%Y %H:%M') if e.resolved_at else '—' }}</div></div>
+      {% set dur = stop_duration(e) %}
+      {% if dur %}
+      <div class="info-row"><div class="k">На стопе был</div>
+        <div class="v"><span class="dur-tag">⏱ {{ dur }}</span></div></div>
+      {% endif %}
       {% endif %}
     </div>
   </div>

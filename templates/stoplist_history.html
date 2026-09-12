@@ -27,15 +27,18 @@
     </div>
     {% else %}
     <div class="tbl-wrap">
-    <table class="stop-tbl">
+    {# `tight` — ustunlar bir-biriga yaqinroq: tarixda bitta ustun ko'p #}
+    <table class="stop-tbl tight">
       <thead><tr>
-        {{ sp.sort_th('Добавлено', 'created_at', '/stoplist/history', qs, sort_by, sort_order, '130px') }}
+        {{ sp.sort_th('Добавлено', 'created_at', '/stoplist/history', qs, sort_by, sort_order, '104px') }}
         {% if not is_client %}{{ sp.sort_th('Филиал', 'branch', '/stoplist/history', qs, sort_by, sort_order) }}{% endif %}
         {{ sp.sort_th('Блюдо', 'dish', '/stoplist/history', qs, sort_by, sort_order) }}
         {{ sp.sort_th('Причина', 'reason', '/stoplist/history', qs, sort_by, sort_order) }}
-        {{ sp.sort_th('Подтверждение', 'supply_confirmed', '/stoplist/history', qs, sort_by, sort_order, '150px') }}
+        {{ sp.sort_th('Подтв.', 'supply_confirmed', '/stoplist/history', qs, sort_by, sort_order, '92px') }}
         {{ sp.sort_th('Комм. снабжения', 'supply_comment', '/stoplist/history', qs, sort_by, sort_order) }}
-        {{ sp.sort_th('Убрано', 'resolved_at', '/stoplist/history', qs, sort_by, sort_order, '130px') }}
+        {{ sp.sort_th('Убрано', 'resolved_at', '/stoplist/history', qs, sort_by, sort_order, '104px') }}
+        {# grafik bo'yicha hisoblanadi — SQL'da yo'q, shuning uchun saralanmaydi #}
+        <th style="width:104px" title="Сколько блюдо простояло на стопе (по графику филиала)">На стопе был</th>
       </tr></thead>
       <tbody>
         {% for e in history %}
@@ -57,6 +60,10 @@
             <div class="d">{{ e.resolved_at.strftime('%d.%m.%Y') }}</div>
             <div class="t">{{ e.resolved_at.strftime('%H:%M') }}</div>
             {% else %}—{% endif %}
+          </td>
+          <td data-label="На стопе был" class="dur-cell">
+            {% set dur = stop_duration(e) %}
+            {% if dur %}<span class="dur-tag">⏱ {{ dur }}</span>{% else %}—{% endif %}
           </td>
         </tr>
         {% endfor %}

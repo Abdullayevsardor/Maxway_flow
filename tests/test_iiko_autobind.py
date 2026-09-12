@@ -60,3 +60,42 @@ def test_ikkilanish_belgilanadi():
 def test_guruh_yoq_bolsa_none():
     pick, shubhali = main._iiko_pick_group("MW01-UNIVERSAM", [], set())
     assert pick is None and shubhali is False
+
+
+def test_admin_iiko_boglanishni_uza_oladi(client, seed, db):
+    """«— не связан —» ni tanlash haqiqatan uzishi kerak.
+
+    Ilgari bu tanlov bo'sh matn yuborardi, FastAPI esa bo'sh matnli Form
+    maydonini «yuborilmagan» deb None ga aylantirardi — natijada uzish
+    buyrug'i yo'qolib, filial iiko'ga bog'langanicha qolaverardi."""
+    from conftest import login
+    b = seed["b2"]
+    b.iiko_terminal_id = "tg-777"
+    b.iiko_org_id = "org-1"
+    b.iiko_terminal_name = "Зал"
+    db.commit()
+
+    login(client, seed["admin"])
+    r = client.post(f"/admin/branches/{b.id}/edit",
+                    data={"name": b.name, "iiko_bind": "-"}, follow_redirects=False)
+    assert r.status_code == 302
+    db.rollback()
+    db.refresh(b)
+    assert b.iiko_terminal_id == ""
+    assert b.iiko_org_id == ""
+
+
+def test_admin_iiko_maydonsiz_sorov_boglanishga_tegmaydi(client, seed, db):
+    """iiko_bind umuman yuborilmasa — mavjud bog'lanish saqlanadi."""
+    from conftest import login
+    b = seed["b2"]
+    b.iiko_terminal_id = "tg-888"
+    db.commit()
+    login(client, seed["admin"])
+    client.post(f"/admin/branches/{b.id}/edit", data={"name": b.name},
+                follow_redirects=False)
+    db.rollback()
+    db.refresh(b)
+    assert b.iiko_terminal_id == "tg-888"
+    b.iiko_terminal_id = ""
+    db.commit()

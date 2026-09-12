@@ -142,3 +142,52 @@ def test_ispolniteli_sahifasida_faqat_xodimlar(client, db, seed):
     finally:
         db.delete(ijrochi)
         db.commit()
+
+
+# ---------- Status sanog'i (chip'lardagi raqamlar) ----------
+@pytest.fixture(scope="module")
+def status_setup(db, seed):
+    """Har xil statusli zayavkalar — sanoq bitta GROUP BY so'rovi bilan
+    olinadi, natija ilgarigi alohida COUNT lar bilan bir xil chiqishi kerak."""
+    statuses = [models.Status.new, models.Status.new, models.Status.in_progress,
+                models.Status.done, models.Status.rejected, models.Status.approved]
+    made = []
+    for i, st in enumerate(statuses):
+        r = models.Request(title=f"Статус-тест {i}", department_id=seed["dep_supply"].id,
+                           created_by=seed["admin"].id, branch_id=seed["b1"].id, status=st)
+        db.add(r)
+        made.append(r)
+    db.commit()
+    yield made
+    for r in made:
+        db.delete(r)
+    db.commit()
+
+
+def _chip_count(html, label):
+    """«Новые <span class="cbadge">7</span>» dan raqamni oladi."""
+    import re
+    m = re.search(label + r'\s*<span class="cbadge"[^>]*>(\d+)</span>', html)
+    assert m, f"«{label}» chipi topilmadi"
+    return int(m.group(1))
+
+
+def test_requests_chip_counts(client, seed, status_setup, db):
+    login(client, seed["admin"])
+    html = client.get("/requests").text
+    q = db.query(models.Request)
+    assert _chip_count(html, "Все") == q.count()
+    for label, st in (("Новые", models.Status.new), ("В работе", models.Status.in_progress),
+                      ("Выполнены", models.Status.done), ("Отклонены", models.Status.rejected),
+                      ("Одобрены", models.Status.approved)):
+        assert _chip_count(html, label) == q.filter(models.Request.status == st).count(), label
+
+
+def test_dashboard_stat_counts(client, seed, status_setup, db):
+    """Dashboard yuqorisidagi «Всего / Новые / В работе / Выполнены»."""
+    login(client, seed["admin"])
+    html = client.get("/dashboard").text
+    q = db.query(models.Request)
+    for st in (models.Status.new, models.Status.in_progress, models.Status.done):
+        assert str(q.filter(models.Request.status == st).count()) in html
+    assert str(q.count()) in html

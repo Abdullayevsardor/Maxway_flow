@@ -14,6 +14,7 @@ from typing import Optional, List
 from fastapi import FastAPI, Depends, Request, Form, HTTPException, File, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, text as sqltext
 from sqlalchemy.orm import Session
@@ -194,6 +195,10 @@ def _admin_tools():
 _admin_tools()
 
 app = FastAPI(title="MAXWAY")
+# Sahifalar gzip bilan ketadi — HTML/CSS/JS hajmi bir necha barobar kichrayadi,
+# sekin mobil internetda sezilarli tezlanish. 800 baytdan kichik javoblarga
+# tegilmaydi (siqish foydasidan ko'ra ortiqcha ish bo'lardi).
+app.add_middleware(GZipMiddleware, minimum_size=800)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
@@ -458,6 +463,17 @@ def display_name(u):
     return u.full_name if u else "—"
 
 
+def _status_counts(q, fn=func) -> dict:
+    """{status_nomi: soni} — bitta GROUP BY so'rovi.
+
+    Ilgari har bir status uchun alohida COUNT ketardi (dashboardда 5 ta,
+    /requests da 7 ta). Kalit doim matn: SQLite Status.new ni matn, Postgres
+    esa enum obyekti qilib qaytaradi."""
+    rows = (q.with_entities(models.Request.status, fn.count(models.Request.id))
+            .group_by(models.Request.status).all())
+    return {(k.value if hasattr(k, "value") else str(k)): n for k, n in rows if k is not None}
+
+
 def add_history(db: Session, req: models.Request, status: models.Status, note=""):
     db.add(models.StatusHistory(request_id=req.id, status=status, note=note))
 
@@ -482,9 +498,16 @@ def login_submit(request: Request, email: str = Form(...), password: str = Form(
     if not user or not auth.verify_password(password, user.hashed_password):
         return templates.TemplateResponse(request, "login.html",
             {"request": request, "error": "Неверный email или пароль"}, status_code=401)
+    # o'chirilgan (is_active=false) akkaunt kira olmaydi — ilgari parol to'g'ri
+    # bo'lsa kiraverardi va «o'chirish» faqat ro'yxatdan yashirardi
+    if auth.is_disabled(user):
+        return templates.TemplateResponse(request, "login.html",
+            {"request": request, "error": "Аккаунт отключён. Обратитесь к администратору"},
+            status_code=403)
     token = auth.create_access_token(user.id)
     resp = RedirectResponse("/dashboard", 302)
-    resp.set_cookie(auth.COOKIE_NAME, token, httponly=True, max_age=7200)
+    resp.set_cookie(auth.COOKIE_NAME, token, httponly=True, max_age=7200,
+                    samesite="lax")
     return resp
 
 
@@ -505,13 +528,21 @@ def register_submit(request: Request, full_name: str = Form(...), email: str = F
         return templates.TemplateResponse(request, "register.html",
             {"request": request, "departments": deps,
              "error": "Bu email allaqachon ro'yxatdan o'tgan"}, status_code=400)
+    # Ochiq ro'yxatdan o'tish: bo'limni odam o'zi tanlaydi. «Снабжение» ni
+    # tanlasa, rol standarti bo'yicha butun stop-list huquqlari ochilib ketardi
+    # (ko'rish, tahrirlash, tasdiqlash). Shuning uchun yangi akkauntga stop-list
+    # ruxsatlari ANIQ yopiq yoziladi — keraklisini admin panelda ochadi.
+    new_perms = json.dumps({k: False for k in PERMISSION_KEYS
+                            if k.endswith("_stop") or k in ("manage_menu", "view_analytics")})
     user = models.User(full_name=full_name.strip(), email=email,
                        hashed_password=auth.hash_password(password),
-                       role=Role.executor, department_id=department_id)
+                       role=Role.executor, department_id=department_id,
+                       perms=new_perms)
     db.add(user); db.commit(); db.refresh(user)
     token = auth.create_access_token(user.id)
     resp = RedirectResponse("/dashboard", 302)
-    resp.set_cookie(auth.COOKIE_NAME, token, httponly=True, max_age=7200)
+    resp.set_cookie(auth.COOKIE_NAME, token, httponly=True, max_age=7200,
+                    samesite="lax")
     return resp
 
 
@@ -535,6 +566,8 @@ def dashboard(request: Request, db: Session = Depends(get_db),
     from sqlalchemy import func as _func
     dep_counts = dict(q.with_entities(models.Request.department_id, _func.count(models.Request.id))
                       .group_by(models.Request.department_id).all())
+    # statuslar bo'yicha sanoq — bitta so'rov (ilgari har biriga alohida COUNT edi)
+    st_counts = _status_counts(q, _func)
     # КПП uchun: zayavkalar filial va kategoriya bo'yicha guruhlangan
     kpp_groups = None
     if user.role == Role.kpp:
@@ -583,8 +616,10 @@ def dashboard(request: Request, db: Session = Depends(get_db),
             fq = fq.filter(models.Request.created_at < datetime.strptime(date_to.strip(), "%Y-%m-%d") + timedelta(days=1))
         except ValueError:
             pass
-    filtered = fq.order_by(models.Request.created_at.desc()).all()
     any_filter = bool(f_dep or f_sub or f_asg or f_branch or customer.strip() or unassigned or month.strip() or date_from.strip() or date_to.strip())
+    # natijalar paneli faqat filtr qo'yilganda ko'rsatiladi — aks holda butun
+    # jadvalni o'qib, keyin tashlab yuborardik
+    filtered = fq.order_by(models.Request.created_at.desc()).all() if any_filter else []
 
     # bo'lim -> podkategoriyalar (dinamik filtr uchun)
     subcats_map = {}
@@ -600,10 +635,10 @@ def dashboard(request: Request, db: Session = Depends(get_db),
 
     ctx = {
         "request": request, "user": user, "active": "dashboard",
-        "total": q.count(),
-        "new": q.filter(models.Request.status == Status.new).count(),
-        "in_progress": q.filter(models.Request.status == Status.in_progress).count(),
-        "done": q.filter(models.Request.status == Status.done).count(),
+        "total": sum(st_counts.values()),
+        "new": st_counts.get("new", 0),
+        "in_progress": st_counts.get("in_progress", 0),
+        "done": st_counts.get("done", 0),
         "unassigned": q.filter(~models.Request.assignees.any(),
                                ~models.Request.status.in_([Status.done, Status.rejected])).count(),
         "departments": scoped_departments(db, user),
@@ -678,14 +713,15 @@ def requests_page(request: Request, department_id: str = "",
     items = query.order_by(models.Request.created_at.desc()).all()
 
     base = base_requests(db, user)
+    st = _status_counts(base, func)          # bitta so'rov — hamma status sanog'i
     counts = {
-        "all": base.count(),
-        "new": base.filter(models.Request.status == Status.new).count(),
-        "approved": base.filter(models.Request.status == Status.approved).count(),
-        "in_progress": base.filter(models.Request.status == Status.in_progress).count(),
-        "on_check": base.filter(models.Request.status == Status.on_check).count(),
-        "done": base.filter(models.Request.status == Status.done).count(),
-        "rejected": base.filter(models.Request.status == Status.rejected).count(),
+        "all": sum(st.values()),
+        "new": st.get("new", 0),
+        "approved": st.get("approved", 0),
+        "in_progress": st.get("in_progress", 0),
+        "on_check": st.get("on_check", 0),
+        "done": st.get("done", 0),
+        "rejected": st.get("rejected", 0),
         "overdue": base.filter(models.Request.deadline.isnot(None),
                               models.Request.deadline < datetime.utcnow(),
                               models.Request.status.notin_([Status.done, Status.rejected])).count(),
@@ -901,6 +937,7 @@ def notify_category(db: Session, r: models.Request):
     link = f"/requests/{r.id}"
     tg_text = category_tg_text(r)
     site_text = f"Новая заявка «{r.title}» — {dep.name if dep else 'без категории'}"
+    chat_ids = []
     for u in recipients:
         if u.id in seen:
             continue
@@ -908,9 +945,11 @@ def notify_category(db: Session, r: models.Request):
         db.add(models.Notification(user_id=u.id, text=site_text, link=link,
                                    from_name=r.customer_name or "—"))
         if u.telegram_chat_id:
-            send_telegram(u.telegram_chat_id, tg_text,
-                          button_url=f"{get_app_url()}{link}")
+            chat_ids.append(u.telegram_chat_id)
     db.commit()
+    # Telegram fon oqimida — ijrochilar ko'p bo'lsa zayavka yaratish sahifasi
+    # har bir xabarni (8 s timeout) kutib turmasin. Stop-list allaqachon shunday.
+    _send_async(chat_ids, tg_text, button_url=f"{get_app_url()}{link}")
 
 
 @app.get("/api/notifications")
@@ -1836,9 +1875,12 @@ def admin_branch_delete(bid: int, request: Request, db: Session = Depends(get_db
 def _apply_iiko_bind(branch, raw: str):
     """Formadan kelgan «terminalGroupId|organizationId|nomi» ni filialga yozadi.
 
-    Bo'sh qiymat — bog'lanish uziladi (filial yana iiko'dan ajraladi).
+    Bo'sh qiymat — bog'lanish uziladi (filial yana iiko'dan ajraladi). Formadan
+    bo'shliq «-» sifatida keladi: FastAPI bo'sh matnni «maydon yuborilmagan»
+    deb hisoblab, uni None ga aylantiradi va uzish buyrug'i yo'qolib ketardi.
     Terminal guruh o'zgarsa iiko_synced_at tozalanadi: yangi bog'lanishning
     birinchi sinxroni telegramga to'kilib ketmasin."""
+    raw = "" if (raw or "").strip() == "-" else raw
     parts = [p.strip() for p in (raw or "").split("|")]
     tg = parts[0] if parts else ""
     org = parts[1] if len(parts) > 1 else ""
@@ -2277,7 +2319,8 @@ def _stoplist_context(request: Request, db: Session, user, resolved: bool,
         if vis is not None:
             bq = bq.filter(models.Branch.id.in_(vis if vis else [-1]))
         branches = sorted_by_name(bq.all())
-    dishes = sorted_by_name(db.query(models.MenuItem).all())
+    # filtr ro'yxatiga faqat id va nom kerak — butun obyektni yuklash ortiqcha
+    dishes = sorted_by_name(db.query(models.MenuItem.id, models.MenuItem.name).all())
     # joriy filtrni saqlab qoluvchi query-string (sort/pagination/export havolalari uchun)
     keep = {"branch_id": f["branch_id"] if not is_client else "",
             "menu_item_id": f["menu_item_id"], "reason": f["reason"],
@@ -2319,9 +2362,6 @@ def stoplist_page(request: Request, sync: str = "", err: str = "", ok: str = "",
     ctx = _stoplist_context(request, db, user, False, branch_id, menu_item_id, reason,
                             confirmed, date_from, date_to, month,
                             sort_by, sort_order, page, page_size)
-    # qo'shish formasi uchun faqat faol menyu (alifbo tartibida)
-    ctx["menu_items"] = sorted_by_name(db.query(models.MenuItem).filter(
-        models.MenuItem.is_active == True).all())
     ctx.update({"active": "stoplist", "sync_msg": sync, "err_msg": err, "ok_msg": ok})
     return templates.TemplateResponse(request, "stoplist.html", ctx)
 
@@ -2515,18 +2555,97 @@ def _parse_hhmm(value: str):
     return (h, mi) if h <= 23 and mi <= 59 else None
 
 
+def _parse_range(value: str):
+    """«08:00-03:00» -> ((8, 0), (3, 0)). Noto'g'ri qiymat -> (None, None)."""
+    parts = (value or "").split("-")
+    if len(parts) != 2:
+        return None, None
+    f, t = _parse_hhmm(parts[0]), _parse_hhmm(parts[1])
+    return (f, t) if f and t else (None, None)
+
+
+# Filiallar ish grafigi spravochnigi («MAXWAY grafik» jadvali, 12.09.2026).
+# iiko API grafikni bermaydi, shuning uchun ro'yxat shu yerda turadi.
+# MUHIM: bu grafik loyiha oynalarida KO'RINMAYDI va tahrirlanmaydi — u faqat
+# «stopda qancha turdi» ni to'g'ri hisoblash uchun (filial yopiq soatlar
+# muddatga qo'shilmasin). O'zgarsa — shu ro'yxat yangilanadi.
+BRANCH_WORK_HOURS = {
+    "MW01-UNIVERSAM": "08:00-03:00",
+    "MW02-MAKSIM GORKIY": "08:00-03:00",
+    "MW03-GRAND MIR": "08:00-03:00",
+    "MW04-XADRA": "08:00-03:00",
+    "MW05-SERGELI": "08:00-03:00",        # Ремонт
+    "MW06-NEXT": "10:00-22:00",
+    "MW07-MINOR": "08:00-03:00",
+    "MW08-SAYRAM": "08:00-03:00",
+    "MW09-MUQIMIY": "08:00-03:00",
+    "MW10-PARKENT": "08:00-03:00",
+    "MW12-MAGIC CITY": "09:00-23:00",
+    "MW13-KATORTOL": "08:00-03:00",
+    "MW14-RISOVIY": "09:00-03:00",
+    "MW15-AVIASOZLAR": "09:00-03:00",
+    "MW16-YANGISHAHAR": "08:00-03:00",
+    "MW17-DRUJBA": "08:00-03:00",
+    "MW18-ATLAS": "10:00-22:00",          # Нет на карте
+    "MW19-BERUNIY": "08:00-03:00",
+    "MW20-ALAYSKIY": "09:00-03:00",
+    "MW21-GOLDENLIFE": "10:00-23:00",
+    "MW22-ECO CHIMGAN": "08:00-03:00",
+}
+
+
+def _sched_key(name: str) -> str:
+    """Solishtirish uchun nom: faqat harf va raqamlar, katta harfda.
+    «MW03-GRAND MIR», «mw03 grandmir» — bitta kalitga tushadi."""
+    return "".join(c for c in (name or "").upper() if c.isalnum())
+
+
+def _build_schedule_index():
+    """Spravochnikdan ikki indeks: to'liq nom bo'yicha va MW-kodi bo'yicha.
+    Kod takrorlansa — noaniq deb hisoblanadi va kod bo'yicha izlanmaydi."""
+    by_name, by_code, takror = {}, {}, set()
+    for name, hours in BRANCH_WORK_HOURS.items():
+        by_name[_sched_key(name)] = hours
+        m = re.match(r"MW\d+", _sched_key(name))
+        if not m:
+            continue
+        code = m.group(0)
+        if code in by_code and by_code[code] != hours:
+            takror.add(code)
+        by_code[code] = hours
+    for code in takror:
+        by_code.pop(code, None)
+    return by_name, by_code
+
+
+_SCHED_BY_NAME, _SCHED_BY_CODE = _build_schedule_index()
+
+
+def branch_schedule(name: str) -> str:
+    """Filial nomi bo'yicha grafik («08:00-03:00») yoki bo'sh satr.
+    Avval to'liq nom, topilmasa — MW-kodi (filial qayta nomlansa ham ishlaydi)."""
+    key = _sched_key(name)
+    if not key:
+        return ""
+    if key in _SCHED_BY_NAME:
+        return _SCHED_BY_NAME[key]
+    m = re.match(r"MW\d+", key)
+    return _SCHED_BY_CODE.get(m.group(0), "") if m else ""
+
+
 def branch_work_hours(branch):
-    """Filial grafigi: o'zinikisi bo'lsa o'shani, aks holda umumiy sozlamani."""
+    """Filial grafigi. Uch qavat, ustunlik tartibida:
+    1) filialning o'z work_from/work_to si (bazaga yozilgan);
+    2) BRANCH_WORK_HOURS spravochnigi (nomi yoki MW-kodi bo'yicha);
+    3) umumiy MAXWAY_WORK_HOURS sozlamasi."""
     f = _parse_hhmm(getattr(branch, "work_from", "") or "")
     t = _parse_hhmm(getattr(branch, "work_to", "") or "")
     if f and t:
         return f, t
-    parts = WORK_HOURS.split("-")
-    if len(parts) == 2:
-        f, t = _parse_hhmm(parts[0]), _parse_hhmm(parts[1])
-        if f and t:
-            return f, t
-    return None, None
+    f, t = _parse_range(branch_schedule(getattr(branch, "name", "")))
+    if f and t:
+        return f, t
+    return _parse_range(WORK_HOURS)
 
 
 def working_delta(start, end, work_from, work_to):
@@ -2570,6 +2689,22 @@ def _human_duration(delta) -> str:
     return " ".join(parts) or f"{mins} мин"
 
 
+def stop_duration(e, branch=None) -> str:
+    """«Stopda qancha turdi» — filial ish grafigi bo'yicha (yopiq soatlar
+    sanalmaydi). Hali yechilmagan yoki sanasi yo'q bo'lsa — bo'sh satr.
+
+    Bitta manba: telegram xabari ham, tarix jadvalidagi ustun ham shuni
+    chaqiradi — ikki joyda ikki xil son chiqmasin."""
+    if e is None or not e.created_at or not e.resolved_at:
+        return ""
+    wf, wt = branch_work_hours(branch if branch is not None else e.branch)
+    return _human_duration(working_delta(e.created_at, e.resolved_at, wf, wt))
+
+
+# tarix jadvalida «Убрано» yonidagi ustun uchun
+templates.env.globals["stop_duration"] = stop_duration
+
+
 def notify_stop_resolved(db: Session, entries, actor):
     """Stopdan olinganda telegram xabari. Bir nechta yozuv birga olinsa —
     har bir filial uchun bitta umumiy xabar (spam bo'lmasin)."""
@@ -2590,15 +2725,19 @@ def notify_stop_resolved(db: Session, entries, actor):
             e = items[0]
             lines.append(f"🍽 Блюдо: <b>{e.menu_item.name if e.menu_item else '—'}</b>")
             lines.append(f"🏷 Причина была: {REASON_LABELS.get(e.reason, e.reason)}")
-            if e.created_at and e.resolved_at:
-                wf, wt = branch_work_hours(branch)
-                lines.append("⏱ На стопе был: " + _human_duration(
-                    working_delta(e.created_at, e.resolved_at, wf, wt)))
+            dur = stop_duration(e, branch)
+            if dur:
+                lines.append(f"⏱ На стопе был: {dur}")
             if e.supply_comment:
                 lines.append(f"💬 Комментарий снабжения: {e.supply_comment}")
             link = f"/stoplist/{e.id}"
         else:
-            names = [(x.menu_item.name if x.menu_item else "—") for x in items]
+            # har bir taom yonida qancha turgani (grafik bo'yicha) ko'rinadi
+            names = []
+            for x in items:
+                nm = x.menu_item.name if x.menu_item else "—"
+                dur = stop_duration(x, branch)
+                names.append(f"{nm} — {dur}" if dur else nm)
             lines += _dish_lines(names)
             link = "/stoplist/history"
         lines.append(f"👤 Снял: {display_name(actor)}" if actor
@@ -3581,7 +3720,9 @@ def stoplist_export(request: Request, mode: str = "active",
                "Подтверждение причины стопа отделом снабжения", "Комментарий Снабжения"]
     widths = [18, 24, 34, 28, 30, 22, 30]
     if resolved:
-        headers.append("Убрано"); widths.append(18)
+        # tarixda «Убрано» yonida — grafik bo'yicha qancha turgani (sahifadagidek)
+        headers += ["Убрано", "На стопе был"]
+        widths += [18, 16]
 
     def row(e):
         r = [e.created_at.strftime("%d.%m.%Y %H:%M") if e.created_at else "",
@@ -3593,6 +3734,7 @@ def stoplist_export(request: Request, mode: str = "active",
              e.supply_comment or ""]
         if resolved:
             r.append(e.resolved_at.strftime("%d.%m.%Y %H:%M") if e.resolved_at else "")
+            r.append(stop_duration(e))
         return r
 
     head_fill = PatternFill("solid", fgColor="1E293B")
