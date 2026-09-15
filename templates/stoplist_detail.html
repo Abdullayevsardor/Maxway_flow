@@ -44,15 +44,8 @@
           </div>
           {% endif %}
         </div></div>
-      <div class="info-row"><div class="k">Комментарий снабжения</div>
+      <div class="info-row"><div class="k">Комментарий</div>
         <div class="v {{ 'muted' if not e.supply_comment }}">{{ e.supply_comment or '—' }}</div></div>
-      <div class="info-row"><div class="k">Создал</div>
-        <div class="v {{ 'muted' if not e.creator }}">{{ e.creator.full_name if e.creator else '—' }}</div></div>
-      <div class="info-row"><div class="k">Изменено</div>
-        <div class="v {{ 'muted' if not e.updated_at }}">
-          {% if e.updated_at %}{{ e.updated_at.strftime('%d.%m.%Y %H:%M') }}{% if e.updater %} · {{ e.updater.full_name }}{% endif %}
-          {% else %}—{% endif %}
-        </div></div>
       {% if e.resolved %}
       <div class="info-row"><div class="k">Убрано со стопа</div>
         <div class="v">{{ e.resolved_at.strftime('%d.%m.%Y %H:%M') if e.resolved_at else '—' }}</div></div>
@@ -97,7 +90,7 @@
       {% endif %}
       {% if can_edit_supply %}
         {% set _ = names.append('supply_comment') %}
-        <div class="field"><label>Комментарий снабжения</label>
+        <div class="field"><label>Комментарий</label>
           <textarea name="supply_comment" class="inp" maxlength="1000"
                     style="width:100%;min-height:62px;padding:10px">{{ e.supply_comment or '' }}</textarea>
         </div>

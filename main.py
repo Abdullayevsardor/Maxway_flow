@@ -3735,7 +3735,7 @@ def stoplist_export(request: Request, mode: str = "active",
     entries = q.all()
 
     headers = ["Добавлено", "Филиал", "Блюдо", "Причина", "Комментарий Филиала",
-               "Подтверждение причины стопа", "Комментарий Снабжения"]
+               "Подтверждение причины стопа", "Комментарий"]
     widths = [18, 24, 34, 28, 30, 22, 30]
     if resolved:
         # tarixda «Убрано» yonida — grafik bo'yicha qancha turgani (sahifadagidek)
@@ -3835,8 +3835,6 @@ def stoplist_detail(sid: int, request: Request, ok: str = "", err: str = "",
     e = (db.query(models.StopEntry)
          .options(joinedload(models.StopEntry.branch),
                   joinedload(models.StopEntry.menu_item),
-                  joinedload(models.StopEntry.creator),
-                  joinedload(models.StopEntry.updater),
                   joinedload(models.StopEntry.confirmer))
          .filter(models.StopEntry.id == sid).first())
     if not e:

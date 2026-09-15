@@ -115,15 +115,36 @@ def test_tasdiqlanmagan_yozuvda_yorliq_yoq(client, db, seed, entry):
 def test_detal_sahifada_ham_rol_korinadi(client, db, seed, entry, kpp):
     _confirm(client, db, seed, entry, kpp)
     html = client.get(f"/stoplist/{entry.id}").text
-    # «Подтверждение» qatorida rol turadi. «Изменено» qatori — audit, u yerda
-    # ism qoladi, shuning uchun butun sahifadan ism qidirilmaydi.
     assert "· КПП" in html
+    assert "Anton Rudnikov" not in html, "sahifada ism emas, rol turishi kerak"
+
+
+def test_sozdal_va_izmeneno_qatorlari_yoq(client, seed, entry):
+    """Yozuv sahifasida «Создал» va «Изменено» qatorlari ko'rsatilmaydi —
+    ro'yxatni iiko to'ldiradi, bu qatorlar odamga hech narsa bermasdi."""
+    login(client, seed["admin"])
+    html = client.get(f"/stoplist/{entry.id}").text
+    assert "Создал" not in html
+    assert "Изменено" not in html
 
 
 # ---------- yorliq matni ----------
 def test_static_snabjenie_sozi_olib_tashlandi(client, seed, entry):
-    """«Подтверждение причины стопа» — «отделом снабжения» qismisiz."""
+    """«Подтверждение причины стопа» — «отделом снабжения» qismisiz,
+    izoh esa shunchaki «Комментарий»."""
     login(client, seed["supply"])
     html = client.get(f"/stoplist/{entry.id}").text
     assert "Подтверждение причины стопа" in html
     assert "отделом снабжения" not in html
+    assert "Комментарий снабжения" not in html
+
+
+def test_royxat_ustuni_shunchaki_kommentariy(client, seed, entry):
+    """Jadval sarlavhasida ham «Комм. снабжения» emas — «Комментарий»."""
+    login(client, seed["supply"])
+    html = client.get("/stoplist").text
+    assert "Комм. снабжения" not in html
+    assert 'Комментарий<span class="sort-ar"' in html
+    # tarix sahifasi bo'sh bo'lishi mumkin (jadval umuman chizilmaydi),
+    # shuning uchun u yerda faqat eski nom qolmaganini tekshiramiz
+    assert "Комм. снабжения" not in client.get("/stoplist/history").text
