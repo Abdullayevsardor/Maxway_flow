@@ -36,11 +36,11 @@
         <div class="v"><span class="reason-tag">{{ REASON_LABELS.get(e.reason, e.reason) }}</span></div></div>
       <div class="info-row"><div class="k">Комментарий филиала</div>
         <div class="v {{ 'muted' if not e.comment }}">{{ e.comment or '—' }}</div></div>
-      <div class="info-row"><div class="k">Подтверждение причины стопа отделом снабжения</div>
+      <div class="info-row"><div class="k">Подтверждение причины стопа</div>
         <div class="v"><span class="conf-tag ro {{ 'yes' if e.supply_confirmed else 'no' }}">{{ confirm_label(e.supply_confirmed) }}</span>
           {% if e.supply_confirmed and e.confirmed_at %}
           <div style="font-weight:400;color:#94a3b8;font-size:13px;margin-top:5px">
-            {{ e.confirmed_at.strftime('%d.%m.%Y %H:%M') }}{% if e.confirmer %} · {{ e.confirmer.full_name }}{% endif %}
+            {{ e.confirmed_at.strftime('%d.%m.%Y %H:%M') }}{% if e.confirmer %} · {{ actor_label(e.confirmer) }}{% endif %}
           </div>
           {% endif %}
         </div></div>
@@ -88,7 +88,7 @@
       {% endif %}
       {% if can_confirm %}
         {% set _ = names.append('supply_confirmed') %}
-        <div class="field"><label>Подтверждение причины стопа отделом снабжения</label>
+        <div class="field"><label>Подтверждение причины стопа</label>
           <select name="supply_confirmed" class="inp">
             <option value="0" {{ 'selected' if not e.supply_confirmed }}>НЕТ</option>
             <option value="1" {{ 'selected' if e.supply_confirmed }}>ДА</option>

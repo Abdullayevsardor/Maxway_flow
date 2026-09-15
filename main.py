@@ -1967,6 +1967,22 @@ def is_supply(user):
     return user.department is not None and "набжен" in (user.department.name or "").lower()
 
 
+def actor_label(u) -> str:
+    """Stop-listda amalni kim bajargani — rol/bo'lim bo'yicha qisqa yorliq.
+
+    Tasdiqlashda odamning ismi emas, QAYSI TOMON tasdiqlagani muhim: КПП mi,
+    Снабжение mi. Ikkalasiga ham kirmaydigan odam (admin alohida ruxsat
+    bergan xodim) o'z ismi bilan ko'rinadi — aks holda «kim tasdiqladi» degan
+    savol javobsiz qolardi."""
+    if u is None:
+        return ""
+    if u.role == Role.kpp:
+        return ROLE_LABELS.get("kpp", "КПП")
+    if is_supply(u):
+        return (u.department.name or "").strip() or "Снабжение"
+    return display_name(u)
+
+
 # ===================== RUXSATLAR (admin har bir userga belgilaydi) =====================
 # (kalit, ko'rinadigan nomi, bo'lim)
 PERMISSION_DEFS = [
@@ -2033,6 +2049,7 @@ def has_perm(user, key):
 
 # shablonlarда `can(user, 'create_request')` sifatida ishlatiladi
 templates.env.globals["can"] = has_perm
+templates.env.globals["actor_label"] = actor_label
 templates.env.globals["is_protected_user"] = is_protected_user
 templates.env.globals["PERMISSION_DEFS"] = PERMISSION_DEFS
 
@@ -2084,7 +2101,7 @@ def can_edit_stop_supply_comment(user, e) -> bool:
 
 
 def can_confirm_stop(user, e) -> bool:
-    """Подтверждение причины стопа отделом снабжения (ДА/НЕТ)."""
+    """Подтверждение причины стопа (ДА/НЕТ)."""
     return has_perm(user, "confirm_stop")
 
 
@@ -2141,12 +2158,15 @@ def _stop_filters(user, branch_id="", menu_item_id="", reason="", confirmed="",
 
 def _stop_query(db: Session, user, f: dict, resolved: bool):
     """Filtrlangan StopEntry query. branch/menu_item darhol yuklanadi (N+1 yo'q)."""
-    from sqlalchemy.orm import contains_eager
+    from sqlalchemy.orm import contains_eager, joinedload
     q = (db.query(models.StopEntry)
          .outerjoin(models.Branch, models.StopEntry.branch_id == models.Branch.id)
          .outerjoin(models.MenuItem, models.StopEntry.menu_item_id == models.MenuItem.id)
          .options(contains_eager(models.StopEntry.branch),
-                  contains_eager(models.StopEntry.menu_item))
+                  contains_eager(models.StopEntry.menu_item),
+                  # kim tasdiqlagani har qatorda ko'rsatiladi — alohida so'rovsiz
+                  joinedload(models.StopEntry.confirmer)
+                  .joinedload(models.User.branch))
          .filter(models.StopEntry.resolved == resolved))
     # klient filialga biriktirilmagan bo'lsa — hech nima ko'rmaydi (ma'lumot sizib chiqmasin)
     if user.role == Role.client and not f["branch_id"]:
@@ -3505,7 +3525,7 @@ def stoplist_comment(sid: int, request: Request, comment: str = Form(""),
 @app.post("/stoplist/{sid}/confirm")
 def stoplist_confirm(sid: int, request: Request, supply_confirmed: str = Form("0"),
                      supply_comment: str = Form(None), db: Session = Depends(get_db)):
-    """Подтверждение причины стопа отделом снабжения (ДА/НЕТ)."""
+    """Подтверждение причины стопа (ДА/НЕТ)."""
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", 302)
@@ -3715,7 +3735,7 @@ def stoplist_export(request: Request, mode: str = "active",
     entries = q.all()
 
     headers = ["Добавлено", "Филиал", "Блюдо", "Причина", "Комментарий Филиала",
-               "Подтверждение причины стопа отделом снабжения", "Комментарий Снабжения"]
+               "Подтверждение причины стопа", "Комментарий Снабжения"]
     widths = [18, 24, 34, 28, 30, 22, 30]
     if resolved:
         # tarixda «Убрано» yonida — grafik bo'yicha qancha turgani (sahifadagidek)

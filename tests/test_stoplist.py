@@ -309,7 +309,7 @@ def test_export_respects_filters(client, seed):
 
     rows = _read_xlsx(r.content)
     assert rows[0] == ("Добавлено", "Филиал", "Блюдо", "Причина", "Комментарий Филиала",
-                       "Подтверждение причины стопа отделом снабжения", "Комментарий Снабжения")
+                       "Подтверждение причины стопа", "Комментарий Снабжения")
     body = rows[1:]
     assert body, "экспорт не должен быть пустым"
     assert all(row[1] == "Ресторан №7" for row in body)   # faqat filtrlangan filial

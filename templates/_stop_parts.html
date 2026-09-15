@@ -116,7 +116,7 @@
 {% endmacro %}
 
 {% macro confirm_cell(e, can_confirm) %}
-<td data-label="Подтверждение снабжения">
+<td data-label="Подтверждение причины стопа">
   {% if can_confirm %}
   <button type="submit" form="xf{{ e.id }}" class="conf-tag {{ 'yes' if e.supply_confirmed else 'no' }}"
           title="Нажмите, чтобы изменить">{{ confirm_label(e.supply_confirmed) }}</button>
@@ -126,7 +126,9 @@
 </td>
 {% endmacro %}
 
-{# Снабжение izohi. inline_save=true — saqlash tugmasi shu yacheykada. #}
+{# Снабжение izohi. inline_save=true — saqlash tugmasi shu yacheykada.
+   Izoh ostida — sababni KIM tasdiqlagani: ism emas, rol/bo'lim yorlig'i
+   (КПП, Снабжение), alohida ruxsat berilgan xodim esa o'z ismi bilan. #}
 {% macro comment_cell(e, can_comment, inline_save=false) %}
 <td data-label="Комм. снабжения" class="cmt-cell">
   {% if can_comment %}
@@ -140,7 +142,15 @@
     {% endif %}
   </div>
   {% else %}{{ e.supply_comment or "—" }}{% endif %}
+  {{ confirmed_by_note(e) }}
 </td>
+{% endmacro %}
+
+{# «Подтвердил: КПП» — tasdiqlangan yozuvlarda kim tasdiqlagani. #}
+{% macro confirmed_by_note(e) %}
+  {% if e.supply_confirmed and e.confirmer %}
+  <div class="cmt-by" title="Подтвердил причину стопа">✓ {{ actor_label(e.confirmer) }}</div>
+  {% endif %}
 {% endmacro %}
 
 {# Amal ustuni: izoh o'zgarganda «Сохранить» chiqadi. #}

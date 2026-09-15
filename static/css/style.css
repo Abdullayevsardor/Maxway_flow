@@ -700,6 +700,9 @@ img, video, table { max-width: 100%; }
   border:1px solid var(--yellow-border);font-weight:600;font-size:12.5px;padding:4px 11px;
   border-radius:999px;white-space:nowrap}
 .cmt-cell{color:#475569;font-size:13.5px;max-width:260px}
+/* Izoh ostidagi «kim tasdiqladi» yorlig'i (КПП / Снабжение / ism) */
+.cmt-by{margin-top:4px;font-size:11.5px;font-weight:600;color:#15803d;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
 
 /* «На стопе был» — filial grafigi bo'yicha hisoblangan muddat */
 .dur-cell{white-space:nowrap}
