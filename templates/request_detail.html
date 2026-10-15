@@ -32,6 +32,10 @@
       <button class="btn" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca" onclick="openModal('reject')">⊘ Отклонить</button>
       {% endif %}
     {% endif %}
+    {# Xato kategoriyaga tushgan zayavkani to'g'ri kategoriyaga o'tkazish #}
+    {% if can(user,'move_request') %}
+    <button class="btn btn-light" onclick="openModal('move')">🔁 Перевести в другую категорию</button>
+    {% endif %}
   </div>
 </div>
 
@@ -272,6 +276,49 @@
     </form>
   </div>
 </div>
+
+<!-- Другую категорию modal -->
+{% if can(user,'move_request') %}
+<div class="modal-bg" id="modal-move">
+  <div class="modal">
+    <h3>🔁 Перевести в другую категорию</h3>
+    <form method="post" action="/requests/{{ r.id }}/move">
+      <div class="field"><label>Текущая категория</label>
+        <input type="text" value="{{ r.department.name if r.department else '—' }}" disabled></div>
+      <div class="field"><label>Новая категория</label>
+        <select name="department_id" id="moveDep" required onchange="moveSubs()">
+          <option value="">— выберите категорию —</option>
+          {% for d in move_deps %}{% if d.id != r.department_id %}
+          <option value="{{ d.id }}">{{ d.name }}</option>
+          {% endif %}{% endfor %}
+        </select></div>
+      <div class="field" id="moveSubField" style="display:none"><label>Подкатегория</label>
+        <select name="subcategory_id" id="moveSub"><option value="">— нет —</option></select></div>
+      <div class="field"><label>Причина перевода</label>
+        <textarea name="reason" placeholder="Почему заявка не относится к этой категории"></textarea></div>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">
+        Исполнители будут сняты, статус вернётся к «Новая», а сотрудники новой
+        категории получат уведомление в Telegram.
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" onclick="closeModal('move')">Отмена</button>
+        <button type="submit" class="btn btn-blue">🔁 Перевести</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  const MOVE_SUBS = {{ subcats_map|tojson }};
+  function moveSubs(){
+    const dep=document.getElementById('moveDep').value;
+    const sel=document.getElementById('moveSub');
+    const list=MOVE_SUBS[dep]||[];
+    sel.innerHTML='<option value="">— нет —</option>';
+    list.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.textContent=s.name;sel.appendChild(o);});
+    document.getElementById('moveSubField').style.display=list.length?'':'none';
+  }
+</script>
+{% endif %}
 
 <!-- Отклонить modal -->
 <div class="modal-bg" id="modal-reject">

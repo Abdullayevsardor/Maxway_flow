@@ -2,6 +2,9 @@
 {% block title %}Заявки{% endblock %}
 {% block content %}
 
+{% if err_msg %}<div class="flash err">{{ err_msg }}</div>{% endif %}
+{% if ok_msg %}<div class="flash ok">{{ ok_msg }}</div>{% endif %}
+
 <div class="page-head">
   <div>
     <h1>{% if selected_dep %}{{ selected_dep.name }}{% else %}Заявки{% endif %}</h1>

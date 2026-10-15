@@ -666,7 +666,7 @@ def requests_page(request: Request, department_id: str = "",
                   status: Optional[str] = None, q: Optional[str] = None,
                   subcategory_id: str = "", date_from: str = "", date_to: str = "",
                   customer: str = "", assignee: str = "", branch_id: str = "",
-                  unassigned: str = "",
+                  unassigned: str = "", ok: str = "", err: str = "",
                   db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
@@ -741,6 +741,7 @@ def requests_page(request: Request, department_id: str = "",
         "f_subcategory": subcategory_id, "f_date_from": date_from, "f_date_to": date_to,
         "f_customer": customer, "f_assignee": assignee, "f_unassigned": unassigned,
         "f_branch": branch_id, "f_department": department_id,
+        "ok_msg": ok, "err_msg": err,
         "any_filter": bool(department_id or subcategory_id or assignee or branch_id
                            or q or customer.strip() or date_from.strip() or date_to.strip()),
     })
@@ -761,9 +762,17 @@ def request_detail(req_id: int, request: Request, ok: str = "", err: str = "",
     if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id \
             and r.department_id != user.department_id:
         return RedirectResponse("/requests", 302)
+    # «Перевести в другую категорию» uchun BARCHA kategoriyalar kerak —
+    # scoped_departments faqat o'z bo'limini qaytaradi, u bu yerda yaramaydi
+    move_deps = db.query(models.Department).order_by(models.Department.name).all()
+    subcats_map = {}
+    for sc in db.query(models.Subcategory).order_by(models.Subcategory.name).all():
+        subcats_map.setdefault(sc.department_id, []).append(
+            {"id": sc.id, "name": sc.name})
     return templates.TemplateResponse(request, "request_detail.html", {
         "request": request, "user": user, "active": "requests", "r": r,
         "executors": scoped_executors(db, user),
+        "move_deps": move_deps, "subcats_map": subcats_map,
         "ok_msg": ok, "err_msg": err,
     })
 
@@ -950,6 +959,111 @@ def notify_category(db: Session, r: models.Request):
     # Telegram fon oqimida — ijrochilar ko'p bo'lsa zayavka yaratish sahifasi
     # har bir xabarni (8 s timeout) kutib turmasin. Stop-list allaqachon shunday.
     _send_async(chat_ids, tg_text, button_url=f"{get_app_url()}{link}")
+
+
+def category_moved_tg_text(r: models.Request, old_dep_name: str, actor,
+                           reason: str = "") -> str:
+    """Zayavka boshqa kategoriyaga o'tkazilgani haqidagi telegram xabari."""
+    dep = r.department
+    txt = (f"🔁 <b>Заявка переведена в вашу категорию — MAXWAY</b>\n\n"
+           f"📌 <b>{r.title}</b>\n"
+           f"🏷 Категория: {old_dep_name or '—'} → {dep.name if dep else '—'}\n"
+           f"⚡️ Приоритет: {PRIORITY_LABELS.get(r.priority.value)}\n"
+           f"🏢 Филиал: {r.branch_obj.name if r.branch_obj else (r.branch or '—')}\n"
+           f"👤 Заказчик: {r.customer_name or '—'}\n"
+           f"📞 Телефон: {r.customer_phone or '—'}\n"
+           f"⏰ Дедлайн: {r.deadline.strftime('%d.%m.%Y') if r.deadline else '—'}\n"
+           f"✍️ Перевёл: {display_name(actor)}")
+    if reason:
+        txt += f"\n💬 Причина: {reason}"
+    return txt
+
+
+def notify_category_moved(db: Session, r: models.Request, old_dep_name: str,
+                          actor, reason: str = ""):
+    """Zayavka o'tkazilgan YANGI kategoriya xodimlariga xabar (sayt + Telegram).
+
+    Qabul qiluvchilar notify_category bilan bitta manbadan —
+    category_notify_users — olinadi, shuning uchun «yangi zayavka» va
+    «o'tkazilgan zayavka» xabarlari aynan bir xil odamlarga boradi. O'tkazgan
+    odamning o'ziga xabar ketmaydi — u allaqachon biladi."""
+    dep = r.department
+    link = f"/requests/{r.id}"
+    tg_text = category_moved_tg_text(r, old_dep_name, actor, reason)
+    site_text = (f"Заявка «{r.title}» переведена в категорию "
+                 f"{dep.name if dep else 'без категории'}")[:300]
+    seen, chat_ids = set(), []
+    for u in category_notify_users(db, r.department_id, actor.id if actor else None):
+        if u.id in seen:
+            continue
+        seen.add(u.id)
+        db.add(models.Notification(user_id=u.id, text=site_text, link=link,
+                                   from_name=display_name(actor)))
+        if u.telegram_chat_id:
+            chat_ids.append(u.telegram_chat_id)
+    db.commit()
+    _send_async(chat_ids, tg_text, button_url=f"{get_app_url()}{link}")
+
+
+@app.post("/requests/{req_id}/move")
+def move_request(req_id: int, request: Request, department_id: int = Form(...),
+                 subcategory_id: Optional[int] = Form(None), reason: str = Form(""),
+                 db: Session = Depends(get_db)):
+    """Zayavkani boshqa kategoriyaga o'tkazadi.
+
+    Filial zayavkani xato kategoriyaga yuborib qo'yishi mumkin. Shunda o'sha
+    kategoriyaga qaraydigan xodim (admin/menejer/ijrochi) uni to'g'ri
+    kategoriyaga o'tkazadi, yangi kategoriya xodimlariga esa botdan xabar
+    boradi — zayavka e'tiborsiz qolib ketmasin."""
+    user = current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", 302)
+    if not has_perm(user, "move_request"):
+        return RedirectResponse(f"/requests/{req_id}", 302)
+    r = db.get(models.Request, req_id)
+    if not r:
+        raise HTTPException(404, "Заявка не найдена")
+    # bo'limga biriktirilgan xodim faqat O'Z bo'limi zayavkasini o'tkazadi
+    if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id \
+            and r.department_id != user.department_id:
+        return RedirectResponse("/requests", 302)
+    dep = db.get(models.Department, department_id)
+    if not dep:
+        return RedirectResponse(f"/requests/{req_id}?err="
+                                + urllib.parse.quote("Категория не найдена"), 302)
+    if dep.id == r.department_id:
+        return RedirectResponse(f"/requests/{req_id}?err="
+                                + urllib.parse.quote("Заявка уже в этой категории"), 302)
+    old_name = r.department.name if r.department else "—"
+    # podkategoriya yangi kategoriyaga tegishli bo'lmasa — tushib qoladi
+    sub = db.get(models.Subcategory, subcategory_id) if subcategory_id else None
+    r.subcategory_id = sub.id if sub and sub.department_id == dep.id else None
+    r.department_id = dep.id
+    # tartib raqami har kategoriyada alohida sanaladi — yangi kategoriyada
+    # oxirgisidan keyingi raqam beriladi
+    last_no = db.query(func.max(models.Request.dep_number)).filter(
+        models.Request.department_id == dep.id).scalar() or 0
+    r.dep_number = last_no + 1
+    # eski kategoriya ijrochilari endi javobgar emas: ro'yxat bo'shatiladi va
+    # ish yangi kategoriyada «Новая» dan boshlanadi (одобрить → назначить)
+    r.assignees.clear()
+    r.assigned_to = None
+    r.status = Status.new
+    note = f"Категория изменена: {old_name} → {dep.name}"
+    add_history(db, r, Status.new, note[:255])
+    txt = f"🔁 {note} — {display_name(user)}"
+    if reason.strip():
+        txt += f"\n💬 {reason.strip()}"
+    db.add(models.Comment(request_id=r.id, user_id=user.id, text=txt))
+    db.commit()
+    notify_category_moved(db, r, old_name, user, reason.strip())
+    msg = urllib.parse.quote(f"Заявка переведена в категорию «{dep.name}»")
+    # o'tkazilgandan keyin zayavka boshqa bo'limda — bo'limga biriktirilgan
+    # xodim uni ko'rolmaydi, shuning uchun ro'yxat sahifasiga xabar bilan qaytamiz
+    if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id \
+            and user.department_id != dep.id:
+        return RedirectResponse(f"/requests?ok={msg}", 302)
+    return RedirectResponse(f"/requests/{req_id}?ok={msg}", 302)
 
 
 @app.get("/api/notifications")
@@ -1988,6 +2102,7 @@ def actor_label(u) -> str:
 PERMISSION_DEFS = [
     ("create_request", "Создавать заявки", "Заявки"),
     ("assign",         "Назначать исполнителей", "Заявки"),
+    ("move_request",   "Переводить заявку в другую категорию", "Заявки"),
     ("view_stop",      "Видеть стоп-лист", "Стоп-лист"),
     ("add_stop",       "Добавлять в стоп-лист", "Стоп-лист"),
     ("edit_stop",      "Редактировать запись стоп-листа", "Стоп-лист"),
@@ -2008,6 +2123,10 @@ def _role_default(user, key):
         return r in (Role.admin, Role.manager, Role.client)
     if key == "assign":
         return r in (Role.admin, Role.manager)
+    if key == "move_request":
+        # xato kategoriyaga tushgan zayavkani o'sha kategoriyaga qaraydigan
+        # xodim to'g'ri kategoriyaga o'tkazadi
+        return r in (Role.admin, Role.manager, Role.executor)
     if key == "view_stop":
         # standart: filial, Просмотр, КПП, Снабжение (admin — has_perm ichida)
         return r in (Role.client, Role.viewer, Role.admin, Role.kpp) or is_supply(user)
