@@ -762,7 +762,7 @@ def request_detail(req_id: int, request: Request, ok: str = "", err: str = "",
     if user.role in (Role.admin, Role.manager, Role.executor) and user.department_id \
             and r.department_id != user.department_id:
         return RedirectResponse("/requests", 302)
-    # «Перевести в другую категорию» uchun BARCHA kategoriyalar kerak —
+    # «Перевести в другой отдел» uchun BARCHA kategoriyalar kerak —
     # scoped_departments faqat o'z bo'limini qaytaradi, u bu yerda yaramaydi
     move_deps = db.query(models.Department).order_by(models.Department.name).all()
     subcats_map = {}
@@ -2102,7 +2102,7 @@ def actor_label(u) -> str:
 PERMISSION_DEFS = [
     ("create_request", "Создавать заявки", "Заявки"),
     ("assign",         "Назначать исполнителей", "Заявки"),
-    ("move_request",   "Переводить заявку в другую категорию", "Заявки"),
+    ("move_request",   "Переводить заявку в другой отдел", "Заявки"),
     ("view_stop",      "Видеть стоп-лист", "Стоп-лист"),
     ("add_stop",       "Добавлять в стоп-лист", "Стоп-лист"),
     ("edit_stop",      "Редактировать запись стоп-листа", "Стоп-лист"),

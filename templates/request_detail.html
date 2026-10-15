@@ -34,7 +34,7 @@
     {% endif %}
     {# Xato kategoriyaga tushgan zayavkani to'g'ri kategoriyaga o'tkazish #}
     {% if can(user,'move_request') %}
-    <button class="btn btn-light" onclick="openModal('move')">🔁 Перевести в другую категорию</button>
+    <button class="btn btn-light" onclick="openModal('move')">🔁 Перевести в другой отдел</button>
     {% endif %}
   </div>
 </div>
@@ -281,7 +281,7 @@
 {% if can(user,'move_request') %}
 <div class="modal-bg" id="modal-move">
   <div class="modal">
-    <h3>🔁 Перевести в другую категорию</h3>
+    <h3>🔁 Перевести в другой отдел</h3>
     <form method="post" action="/requests/{{ r.id }}/move">
       <div class="field"><label>Текущая категория</label>
         <input type="text" value="{{ r.department.name if r.department else '—' }}" disabled></div>
